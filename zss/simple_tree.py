@@ -5,6 +5,8 @@
 #For licensing see the LICENSE file in the top level directory.
 
 import collections
+import hashlib
+import binascii
 
 
 class Node(object):
@@ -25,6 +27,10 @@ class Node(object):
     def __init__(self, label, children=None):
         self.label = label
         self.children = children or list()
+        self.__sha = None
+        self.fingerprint_index = None
+        self.__depth = None
+        self.__subtree_size = None
 
     @staticmethod
     def get_children(node):
@@ -66,6 +72,43 @@ class Node(object):
             n = queue.popleft()
             for c in n.children: queue.append(c)
             yield n
+
+    @property
+    def sha(self):
+        if self.__sha is None:
+            hasher = hashlib.sha256()
+            s = '{0}({1})'.format(self.label, ','.join(child.sha for child in self.children))
+            hasher.update(s)
+            self.__sha = binascii.hexlify(hasher.digest())
+        return self.__sha
+
+    @property
+    def depth(self):
+        if self.__depth is None:
+            self.__depth = 1 + (max([c.depth for c in self.children]) if len(self.children) > 0 else 0)
+        return self.__depth
+
+    @property
+    def subtree_size(self):
+        if self.__subtree_size is None:
+            self.__subtree_size = 1 + sum([c.subtree_size for c in self.children])
+        return self.__subtree_size
+
+    def build_sha_table(self, sha_to_nodes):
+        for child in self.children:
+            child.build_sha_table(sha_to_nodes)
+        nodes = sha_to_nodes.setdefault(self.sha, list())
+        nodes.append(self)
+
+    def update_fingerprint_index(self, sha_to_index):
+        for child in self.children:
+            child.update_fingerprint_index(sha_to_index)
+        self.fingerprint_index = sha_to_index.setdefault(self.sha, len(sha_to_index))
+
+    def all_nodes(self, node_list):
+        for child in self.children:
+            child.all_nodes(node_list)
+        node_list.append(self)
 
     def __contains__(self, b):
         if isinstance(b, str) and self.label == b: return 1

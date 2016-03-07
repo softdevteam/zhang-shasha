@@ -4,7 +4,7 @@
 #Email: tim.tadh@gmail.com, steve@steveasleep.com
 #For licensing see the LICENSE file in the top level directory.
 
-import collections
+import collections, itertools
 
 try:
     import numpy as np
@@ -49,12 +49,38 @@ class AnnotatedTree(object):
         while len(stack) > 0:
             n, anc = stack.pop()
             nid = j
+            # children of `n` get pushed into `stack` left-to-right,
+            # so they are popped off right-to-left
             for c in self.get_children(n):
                 a = collections.deque(anc)
                 a.appendleft(nid)
                 stack.append((c, a))
             pstack.append(((n, nid), anc))
             j += 1
+        # At this point, `pstack` contains a right-to-left pre-order traversal of the tree
+        # So: the first item is the root, the last is the left-most leaf
+        # where each item is ((node, node_id), ancestor_node_ids)
+        # where node_ids are the indices of the node to which they refer in `pstack`
+
+        # The loop below pops nodes off in reverse order, so we will end up building a list of nodes
+        # that is a reversed right-to-left pre-order traversal:
+        # The first node is the left-most-leaf, the last is the root
+
+        # `self.nodes` is a list of nodes in order of reversed right-to-left pre-order traversal
+        # `self.ids` is a list of node ids that provides the node ID of each node in `self.nodes`
+
+        # `self.lmds` is a list of indices that index into `self.nodes`
+        # It provides the left-most-descendant of each node
+        # self.lmds[i] == self.nodes.index(left_most_descendant(self.nodes[i]))
+        #
+        # `self.keyroots` is also a list of indices that index into `self.nodes`
+        # It lists the indices of keyroot nodes
+        # For each keyroot node `k` there exists no keyroot node `j` that has the same left-most-descendant
+        # as `k` where `j` is a descendant of `k`, in other words, each `k` in `self.keyroots` has
+        # a different left-most-descendant, and `k` is the furthest ancestor from
+        # `left_most_descendant(k)`
+        # `self.keyroots` is in order of reversed right-to-left pre-order traversal
+
         lmds = dict()
         keyroots = dict()
         i = 0
@@ -81,7 +107,8 @@ class AnnotatedTree(object):
 
 
 def simple_distance(A, B, get_children=Node.get_children,
-        get_label=Node.get_label, label_dist=strdist):
+        get_label=Node.get_label, label_dist=strdist,
+                    comparison_filter=None):
     """Computes the exact tree edit distance between trees A and B.
 
     Use this function if both of these things are true:
@@ -119,10 +146,11 @@ def simple_distance(A, B, get_children=Node.get_children,
         insert_cost=lambda node: label_dist('', get_label(node)),
         remove_cost=lambda node: label_dist(get_label(node), ''),
         update_cost=lambda a, b: label_dist(get_label(a), get_label(b)),
+        comparison_filter=comparison_filter,
     )
 
 
-def distance(A, B, get_children, insert_cost, remove_cost, update_cost):
+def distance(A, B, get_children, insert_cost, remove_cost, update_cost, comparison_filter=None):
     '''Computes the exact tree edit distance between trees A and B with a
     richer API than :py:func:`zss.simple_distance`.
 
@@ -156,58 +184,94 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost):
     A, B = AnnotatedTree(A, get_children), AnnotatedTree(B, get_children)
     treedists = zeros((len(A.nodes), len(B.nodes)), int)
 
+    comparison_count = [0]
+    filtered_comparison_count = [0]
+
     def treedist(i, j):
         Al = A.lmds
         Bl = B.lmds
         An = A.nodes
         Bn = B.nodes
 
+        key = An[i].label, Bn[j].label
+        permitted = comparison_filter[key] if comparison_filter is not None else True
+
+        # The left-most ancestor of node `i` is `Al[i]`. Its index will be smaller than that of `i`.
+        # `i - Al[i] + 1` will be the number of nodes in the subtree rooted at node `i`.
+        # For computing edit distance of two sequences of length `r` and `s` a distance matrix of
+        # size (r+1, s+1) is required.
+        # `m` and `n` are the dimensions of the forest distance matrix `fd`.
         m = i - Al[i] + 2
         n = j - Bl[j] + 2
         fd = zeros((m,n), int)
 
+        # indices into the distance matrix correspond to node_index+1
+        # `ioff` and `joff` are the position of the left-most-leaf of the subtrees rooted at `i` and `j`.
+        # They are effectively the offset of the local `i` <-> `j` forest distance matrix `fd` within the
+        # global distance matrix `treedists`
+        # Adding them to an index will transform from forest space to global space
         ioff = Al[i] - 1
         joff = Bl[j] - 1
 
-        for x in xrange(1, m): # δ(l(i1)..i, θ) = δ(l(1i)..1-1, θ) + γ(v → λ)
-            fd[x][0] = fd[x-1][0] + remove_cost(An[x+ioff])
-        for y in xrange(1, n): # δ(θ, l(j1)..j) = δ(θ, l(j1)..j-1) + γ(λ → w)
-            fd[0][y] = fd[0][y-1] + insert_cost(Bn[y+joff])
+        if permitted:
+            for x in xrange(1, m): # δ(l(i1)..i, θ) = δ(l(1i)..1-1, θ) + γ(v → λ)
+                fd[x][0] = fd[x-1][0] + remove_cost(An[x+ioff])
+            for y in xrange(1, n): # δ(θ, l(j1)..j) = δ(θ, l(j1)..j-1) + γ(λ → w)
+                fd[0][y] = fd[0][y-1] + insert_cost(Bn[y+joff])
 
-        for x in xrange(1, m): ## the plus one is for the xrange impl
-            for y in xrange(1, n):
-                # only need to check if x is an ancestor of i
-                # and y is an ancestor of j
-                if Al[i] == Al[x+ioff] and Bl[j] == Bl[y+joff]:
-                    #                   +-
-                    #                   | δ(l(i1)..i-1, l(j1)..j) + γ(v → λ)
-                    # δ(F1 , F2 ) = min-+ δ(l(i1)..i , l(j1)..j-1) + γ(λ → w)
-                    #                   | δ(l(i1)..i-1, l(j1)..j-1) + γ(v → w)
-                    #                   +-
-                    fd[x][y] = min(
-                        fd[x-1][y] + remove_cost(An[x+ioff]),
-                        fd[x][y-1] + insert_cost(Bn[y+joff]),
-                        fd[x-1][y-1] + update_cost(An[x+ioff], Bn[y+joff]),
-                    )
-                    treedists[x+ioff][y+joff] = fd[x][y]
-                else:
-                    #                   +-
-                    #                   | δ(l(i1)..i-1, l(j1)..j) + γ(v → λ)
-                    # δ(F1 , F2 ) = min-+ δ(l(i1)..i , l(j1)..j-1) + γ(λ → w)
-                    #                   | δ(l(i1)..l(i)-1, l(j1)..l(j)-1)
-                    #                   |                     + treedist(i1,j1)
-                    #                   +-
-                    p = Al[x+ioff]-1-ioff
-                    q = Bl[y+joff]-1-joff
-                    #print (p, q), (len(fd), len(fd[0]))
-                    fd[x][y] = min(
-                        fd[x-1][y] + remove_cost(An[x+ioff]),
-                        fd[x][y-1] + insert_cost(Bn[y+joff]),
-                        fd[p][q] + treedists[x+ioff][y+joff]
-                    )
+            # `x` and `y` are indices into the forest distance matrix `fd`
+            for x in xrange(1, m): ## the plus one is for the xrange impl
+                for y in xrange(1, n):
+                    # only need to check if x is an ancestor of i
+                    # and y is an ancestor of j
+                    if Al[i] == Al[x+ioff] and Bl[j] == Bl[y+joff]:
+                        #                   +-
+                        #                   | δ(l(i1)..i-1, l(j1)..j) + γ(v → λ)
+                        # δ(F1 , F2 ) = min-+ δ(l(i1)..i , l(j1)..j-1) + γ(λ → w)
+                        #                   | δ(l(i1)..i-1, l(j1)..j-1) + γ(v → w)
+                        #                   +-
+                        fd[x][y] = min(
+                            fd[x-1][y] + remove_cost(An[x+ioff]),
+                            fd[x][y-1] + insert_cost(Bn[y+joff]),
+                            fd[x-1][y-1] + update_cost(An[x+ioff], Bn[y+joff]),
+                        )
+                        treedists[x+ioff][y+joff] = fd[x][y]
+                    else:
+                        #                   +-
+                        #                   | δ(l(i1)..i-1, l(j1)..j) + γ(v → λ)
+                        # δ(F1 , F2 ) = min-+ δ(l(i1)..i , l(j1)..j-1) + γ(λ → w)
+                        #                   | δ(l(i1)..l(i)-1, l(j1)..l(j)-1)
+                        #                   |                     + treedist(i1,j1)
+                        #                   +-
+
+                        # `x+ioff` transforms x from forest space into global space,
+                        # `Al[x+ioff]` gets the index of the left most descendant of `x` in global space
+                        # `Al[x+ioff] - 1` gets the index of the root node of the previous subtree to `x` in global space
+                        # `Al[x+ioff]-1-off` transforms the index of the root of the previous subtree into forest space
+                        p = Al[x+ioff]-1-ioff
+                        q = Bl[y+joff]-1-joff
+                        #print (p, q), (len(fd), len(fd[0]))
+                        fd[x][y] = min(
+                            fd[x-1][y] + remove_cost(An[x+ioff]),
+                            fd[x][y-1] + insert_cost(Bn[y+joff]),
+                            fd[p][q] + treedists[x+ioff][y+joff]
+                        )
+            comparison_count[0] += (m-1) * (n-1)
+            filtered_comparison_count[0] += (m-1) * (n-1)
+        else:
+            for x in xrange(1, m):
+                if Al[i] == Al[x+ioff]:
+                    for y in xrange(1, n):
+                        if Bl[j] == Bl[y+joff]:
+                            treedists[x+ioff][y+joff] = x+y
+                            filtered_comparison_count[0] += 1
+            comparison_count[0] += (m-1) * (n-1)
+
 
     for i in A.keyroots:
         for j in B.keyroots:
             treedist(i,j)
+
+    print 'ZS performed {0}/{1} comparisons'.format(filtered_comparison_count[0], comparison_count[0])
 
     return treedists[-1][-1]
