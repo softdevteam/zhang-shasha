@@ -24,13 +24,15 @@ class Node(object):
             .addkid(Node("e"))
     """
 
-    def __init__(self, label, children=None):
+    def __init__(self, label, children=None, start=None, end=None):
         self.label = label
         self.children = children or list()
         self.__sha = None
-        self.fingerprint_index = None
+        self.__fingerprint_index = None
         self.__depth = None
         self.__subtree_size = None
+        self.start = start
+        self.end = end
 
     @staticmethod
     def get_children(node):
@@ -94,6 +96,12 @@ class Node(object):
             self.__subtree_size = 1 + sum([c.subtree_size for c in self.children])
         return self.__subtree_size
 
+    @property
+    def fingerprint_index(self):
+        if self.__fingerprint_index is None:
+            raise ValueError('Fingerprint not computed for node {0}'.format(id(self)))
+        return self.__fingerprint_index
+
     def build_sha_table(self, sha_to_nodes):
         for child in self.children:
             child.build_sha_table(sha_to_nodes)
@@ -103,12 +111,78 @@ class Node(object):
     def update_fingerprint_index(self, sha_to_index):
         for child in self.children:
             child.update_fingerprint_index(sha_to_index)
-        self.fingerprint_index = sha_to_index.setdefault(self.sha, len(sha_to_index))
+        self.__fingerprint_index = sha_to_index.setdefault(self.sha, len(sha_to_index))
 
     def all_nodes(self, node_list):
         for child in self.children:
             child.all_nodes(node_list)
         node_list.append(self)
+
+    def fix_markers_top_down(self, start, end):
+        start = self.start = self.start or start
+        end = self.end = self.end or end
+
+        # Get start markers for all children
+        child_starts = [child.start for child in self.children]
+
+        # Fill in any blank entries backwards from the end
+        valid_marker = end
+        for i, s in reversed(list(enumerate(child_starts))):
+            if s is None:
+                child_starts[i] = valid_marker
+            else:
+                valid_marker = s
+
+        # Start points are end points for previous elements
+        child_ends = child_starts[1:] + [end]
+
+        # Fix markers
+        for child, start, end in zip(self.children, child_starts, child_ends):
+            child.fix_markers_top_down(start, end)
+
+        for a, b in zip(self.children[:-1], self.children[1:]):
+            assert b.start >= a.end
+
+    def fix_markers_bottom_up(self):
+        if len(self.children) > 0:
+            child_starts = [child.fix_markers_bottom_up() for child in self.children]
+            if self.start is None:
+                child_starts = [s for s in child_starts if s is not None]
+                if len(child_starts) > 0:
+                    s = min(child_starts)
+                    self.start = s
+
+        return self.start
+
+
+    def common_prefix_matches(self, matches, other_node, prefix_end_self, prefix_end_other):
+        # If the node fingerprints match and their ranges are contained entirely within the common prefix,
+        # add to the match list
+        if self.fingerprint_index == other_node.fingerprint_index and \
+                self.end <= prefix_end_self and other_node.end <= prefix_end_other:
+            matches.append((self, other_node))
+        # If the node range overlaps the common prefix
+        if self.start <= prefix_end_self and other_node.start <= prefix_end_other:
+            # Match child nodes
+            for c_self, c_other in zip(self.children, other_node.children):
+                if c_self.start > prefix_end_self or c_other.start > prefix_end_other:
+                    break
+                c_self.common_prefix_matches(matches, c_other, prefix_end_self, prefix_end_other)
+
+
+    def common_suffix_matches(self, matches, other_node, suffix_start_self, suffix_start_other):
+        # If the node fingerprints match and their ranges are contained entirely within the common suffix,
+        # add to the match list
+        if self.fingerprint_index == other_node.fingerprint_index and \
+                self.start <= suffix_start_self and other_node.start <= suffix_start_other:
+            matches.append((self, other_node))
+        # If the node range overlaps the common suffix
+        if self.end >= suffix_start_self and other_node.end >= suffix_start_other:
+            for c_self, c_other in zip(reversed(self.children), reversed(other_node.children)):
+                if c_self.end < suffix_start_self or c_other.end < suffix_start_other:
+                    break
+                c_self.common_suffix_matches(matches, c_other, suffix_start_self, suffix_start_other)
+
 
     def __contains__(self, b):
         if isinstance(b, str) and self.label == b: return 1
@@ -133,3 +207,18 @@ class Node(object):
         s = "%d:%s" % (len(self.children), self.label)
         s = '\n'.join([s]+[str(c) for c in self.children])
         return s
+
+    def pretty_print(self, level=0):
+        if self.start is not None and self.end is not None:
+            rng = ' ({0} - {1})'.format(self.start.pos, self.end.pos)
+        elif self.start is not None and self.end is None:
+            rng = ' ({0} -)'.format(self.start.pos)
+        elif self.start is None and self.end is not None:
+            rng = ' (- {0})'.format(self.end.pos)
+        else:
+            rng = ''
+        if len(self.children) > 0:
+            ch = '\n'.join([c.pretty_print(level+1) for c in self.children])
+            return '{0}{1}{2}:\n{3}'.format('  ' * level, self.label, rng, ch)
+        else:
+            return '{0}{1}{2}'.format('  ' * level, self.label, rng)

@@ -315,3 +315,11 @@ def compute_node_type_compatibility_by_grammar(node_classes):
             comparison_permitted[key2] = permitted
 
     return comparison_permitted
+
+
+def type_compatbility_map_to_matrix(node_classes, type_compatibility_map):
+    lines = []
+    for a in node_classes:
+        line = ''.join([('*' if type_compatibility_map[(a,b)] else '.') for b in node_classes])
+        lines.append(line)
+    return '\n'.join(lines)

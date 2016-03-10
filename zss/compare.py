@@ -108,7 +108,7 @@ class AnnotatedTree(object):
 
 def simple_distance(A, B, get_children=Node.get_children,
         get_label=Node.get_label, label_dist=strdist,
-                    comparison_filter=None):
+                    comparison_filter=None, match_constraints=None):
     """Computes the exact tree edit distance between trees A and B.
 
     Use this function if both of these things are true:
@@ -147,10 +147,12 @@ def simple_distance(A, B, get_children=Node.get_children,
         remove_cost=lambda node: label_dist(get_label(node), ''),
         update_cost=lambda a, b: label_dist(get_label(a), get_label(b)),
         comparison_filter=comparison_filter,
+        match_constraints=match_constraints,
     )
 
 
-def distance(A, B, get_children, insert_cost, remove_cost, update_cost, comparison_filter=None):
+def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
+             comparison_filter=None, match_constraints=None):
     '''Computes the exact tree edit distance between trees A and B with a
     richer API than :py:func:`zss.simple_distance`.
 
@@ -181,6 +183,11 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost, comparis
 
     :return: An integer distance [0, inf+)
     '''
+    match_a_to_b = {}
+    if match_constraints is not None:
+        for node_a, node_b in match_constraints:
+            match_a_to_b[node_a] = node_b
+
     A, B = AnnotatedTree(A, get_children), AnnotatedTree(B, get_children)
     treedists = zeros((len(A.nodes), len(B.nodes)), int)
 
@@ -193,8 +200,11 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost, comparis
         An = A.nodes
         Bn = B.nodes
 
-        key = An[i].label, Bn[j].label
-        permitted = comparison_filter[key] if comparison_filter is not None else True
+        filter_key = An[i].label, Bn[j].label
+        permitted = comparison_filter[filter_key] if comparison_filter is not None else True
+        match_target = match_a_to_b.get(An[i])
+        if match_target is not None:
+            permitted = False
 
         # The left-most ancestor of node `i` is `Al[i]`. Its index will be smaller than that of `i`.
         # `i - Al[i] + 1` will be the number of nodes in the subtree rooted at node `i`.
@@ -259,11 +269,14 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost, comparis
             comparison_count[0] += (m-1) * (n-1)
             filtered_comparison_count[0] += (m-1) * (n-1)
         else:
+            nodes_matched = match_target is Bn[i]
             for x in xrange(1, m):
                 if Al[i] == Al[x+ioff]:
                     for y in xrange(1, n):
                         if Bl[j] == Bl[y+joff]:
-                            treedists[x+ioff][y+joff] = x+y
+                            # If the nodes are matched, the cost is the difference between x and y,
+                            # else it is the sum of x and y
+                            treedists[x+ioff][y+joff] = (max(x,y) - min(x,y)) if nodes_matched else x+y
                             filtered_comparison_count[0] += 1
             comparison_count[0] += (m-1) * (n-1)
 

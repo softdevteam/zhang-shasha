@@ -6,76 +6,8 @@ import parser, ast, _ast
 
 import type_pruning
 
-
-# def tuple_to_tree(x):
-#     label = x[0]
-#     child_node_count = len([y for y in x[1:] if isinstance(y, tuple)])
-#     if child_node_count == len(x)-1:
-#         return simple_tree.Node(str(label), [tuple_to_tree(y) for y in x[1:]])
-#     else:
-#         label = ':'.join([str(y) for y in x])
-#         return simple_tree.Node(label)
-
-def tuple_to_tree(x):
-    label = x[0]
-    return simple_tree.Node(str(label), [tuple_to_tree(y) for y in x[1:] if isinstance(y, tuple)])
-
-
-class NodeClass (object):
-    def __init__(self, cls_name):
-        self.cls_name = cls_name
-
-    def node(self, value, children):
-        return simple_tree.Node(self.cls_name, children)
-
-
-class ASTConverter (object):
-    """
-    Python AST to Gumtree tree converter.
-    """
-    def __init__(self):
-        self._node_classes = {}
-        self._ast_type_containment = {}
-
-    def _get_node_class(self, ast_node):
-        t = type(ast_node)
-        try:
-            return self._node_classes[t]
-        except KeyError:
-            cls = NodeClass(t.__name__)
-            self._node_classes[t] = cls
-            return cls
-
-    def _handle_ast_value(self, children, values, x, parent_type):
-        if isinstance(x, ast.AST):
-            ts = self._ast_type_containment.setdefault(parent_type, set())
-            ts.add(type(x))
-            children.append(self._ast_to_tree(x))
-        elif isinstance(x, (list, tuple)):
-            for v in x:
-                self._handle_ast_value(children, values, v, parent_type)
-        else:
-            # raise TypeError('Value type {0}'.format(type(x)))
-            pass
-
-
-    def _ast_to_tree(self, ast_node):
-        children = []
-        values = []
-        for field_name in ast_node._fields:
-            field_val = getattr(ast_node, field_name)
-            self._handle_ast_value(children, values, field_val, type(ast_node))
-        node_class = self._get_node_class(ast_node)
-        value = '_'.join([str(x) for x in values])
-        return node_class.node(value, children)
-
-    def parse(self, code):
-        a = ast.parse(code)
-        t = self._ast_to_tree(a)
-        return t
-
-    def node_classes(self):
-        return self._node_classes.keys()
+from ast_to_simple_tree import ASTConverter
+from source_text import SourceText, Marker
 
 
 
@@ -243,17 +175,28 @@ def test():
     # A = tuple_to_tree(st1.totuple())
     # B = tuple_to_tree(st2.totuple())
 
-    # A = conv.parse(codea1)
-    # B = conv.parse(codea2)
-    # A = conv.parse(coded1)
-    # B = conv.parse(coded2)
-    # A = conv.parse(codee1)
-    # B = conv.parse(codee2)
+    # A = SourceText.from_file(codea1)
+    # B = SourceText.from_file(codea2)
+    # A = SourceText.from_file(coded1)
+    # B = SourceText.from_file(coded2)
+    # A = SourceText.from_file(codee1)
+    # B = SourceText.from_file(codee2)
 
-    A = conv.parse(open('example_test_v1.py', 'r').read())
-    B = conv.parse(open('example_test_v2.py', 'r').read())
-    # A = conv.parse(open('example_test_b_v1.py', 'r').read())
-    # B = conv.parse(open('example_test_b_v2.py', 'r').read())
+    A_src = SourceText.from_file(open('example_test_v1.py', 'r'))
+    B_src = SourceText.from_file(open('example_test_v2.py', 'r'))
+    # A_src = SourceText.from_file(open('example_test_b_v1.py', 'r'))
+    # B_src = SourceText.from_file(open('example_test_b_v2.py', 'r'))
+
+    A_prefix_end, B_prefix_end = A_src.markers_at_end_of_longest_common_prefix(B_src)
+    A_suffix_start, B_suffix_start = A_src.markers_at_start_of_longest_common_suffix(B_src)
+
+    A = conv.parse(A_src)
+    B = conv.parse(B_src)
+
+    matches = []
+    A.common_prefix_matches(matches, B, A_prefix_end, B_prefix_end)
+    A.common_suffix_matches(matches, B, A_suffix_start, B_suffix_start)
+
 
     node_classes = [getattr(_ast, name) for name in dir(_ast)]
     node_classes = [cls for cls in node_classes if isinstance(cls, type) and issubclass(cls, _ast.AST)]
@@ -262,11 +205,13 @@ def test():
 
     comparison_permitted = type_pruning.compute_node_type_compatibility_by_grammar(node_classes)
 
+    # print type_pruning.type_compatbility_map_to_matrix(node_classes, comparison_permitted)
+
     comparison_permitted_by_label = {
         (a.__name__, b.__name__): v for ((a,b), v) in comparison_permitted.items()
     }
 
-    print '|A|={0}, |B|={1}'.format(len([x for x in A.iter()]), len([x for x in B.iter()]))
+    print '|A|={0}, |B|={1}, |matches|={2}'.format(len([x for x in A.iter()]), len([x for x in B.iter()]), len(matches))
 
     total_comparisons = 0
     filtered_comparisons = 0
@@ -282,7 +227,10 @@ def test():
 
     t1 = datetime.datetime.now()
 
-    d = compare.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label, comparison_filter=comparison_permitted_by_label)
+    # matches = None
+    d = compare.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label,
+                                comparison_filter=comparison_permitted_by_label,
+                                match_constraints=matches)
     # d = compare.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label, comparison_filter=None)
 
     t2 = datetime.datetime.now()
