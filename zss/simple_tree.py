@@ -184,6 +184,22 @@ class Node(object):
                 c_self.common_suffix_matches(matches, c_other, suffix_start_self, suffix_start_other)
 
 
+    def _flatten_retained(self, flatten_pred_fn):
+        ch = []
+        for child in self.children:
+            ch.extend(child._flatten(flatten_pred_fn))
+        return Node(label=self.label, children=ch, start=self.start, end=self.end)
+
+    def _flatten(self, flatten_pred_fn):
+        if len(self.children) > 0 and flatten_pred_fn(self):
+            return self.children
+        else:
+            return [self._flatten_retained(flatten_pred_fn)]
+
+    def flatten(self, flatten_pred_fn):
+        return self._flatten_retained(flatten_pred_fn)
+
+
     def __contains__(self, b):
         if isinstance(b, str) and self.label == b: return 1
         elif not isinstance(b, str) and self.label == b.label: return 1

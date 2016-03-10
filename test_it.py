@@ -8,6 +8,7 @@ import type_pruning
 
 from ast_to_simple_tree import ASTConverter
 from source_text import SourceText, Marker
+import tree_flattening
 
 
 
@@ -211,7 +212,22 @@ def test():
         (a.__name__, b.__name__): v for ((a,b), v) in comparison_permitted.items()
     }
 
+    flattened_types, retained_types = tree_flattening.flatten_types()
+    flattened_type_names = [t.__name__ for t in flattened_types]
+
+    def flatten_pred_fn(x):
+        return x.label in flattened_type_names
+
+    fingerprints = {}
+    A_flat = A.flatten(flatten_pred_fn)
+    B_flat = B.flatten(flatten_pred_fn)
+    A_flat.update_fingerprint_index(fingerprints)
+    B_flat.update_fingerprint_index(fingerprints)
+
     print '|A|={0}, |B|={1}, |matches|={2}'.format(len([x for x in A.iter()]), len([x for x in B.iter()]), len(matches))
+    print 'A.height={0}, B.height={1}'.format(A.depth, B.depth)
+    print '|A.flattened|={0}, |B.flattened|={1}'.format(len([x for x in A_flat.iter()]), len([x for x in B_flat.iter()]))
+    print 'A.flattened.height={0}, B.flattened.height={1}'.format(A_flat.depth, B_flat.depth)
 
     total_comparisons = 0
     filtered_comparisons = 0
@@ -225,10 +241,14 @@ def test():
     print '{0} / {1} comparisons passed'.format(filtered_comparisons, total_comparisons)
 
 
+    d = compare.simple_distance(A_flat, B_flat, simple_tree.Node.get_children, simple_tree.Node.get_label,
+                                comparison_filter=comparison_permitted_by_label,
+                                match_constraints=matches)
+
     t1 = datetime.datetime.now()
 
     # matches = None
-    d = compare.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label,
+    d = compare.simple_distance(A_flat, B_flat, simple_tree.Node.get_children, simple_tree.Node.get_label,
                                 comparison_filter=comparison_permitted_by_label,
                                 match_constraints=matches)
     # d = compare.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label, comparison_filter=None)
