@@ -33,6 +33,8 @@ class Node(object):
         self.__subtree_size = None
         self.start = start
         self.end = end
+        self.nidx = -1
+        self.kridx = -1
 
     @staticmethod
     def get_children(node):
@@ -174,7 +176,7 @@ class Node(object):
         # If the node fingerprints match and their ranges are contained entirely within the common suffix,
         # add to the match list
         if self.fingerprint_index == other_node.fingerprint_index and \
-                self.start <= suffix_start_self and other_node.start <= suffix_start_other:
+                self.start >= suffix_start_self and other_node.start >= suffix_start_other:
             matches.append((self, other_node))
         # If the node range overlaps the common suffix
         if self.end >= suffix_start_self and other_node.end >= suffix_start_other:
@@ -182,6 +184,15 @@ class Node(object):
                 if c_self.end < suffix_start_self or c_other.end < suffix_start_other:
                     break
                 c_self.common_suffix_matches(matches, c_other, suffix_start_self, suffix_start_other)
+
+
+    def prune(self, start_marker, end_marker):
+        children = []
+        for child in self.children:
+            if child.end >= start_marker and child.start <= end_marker:
+                children.append(child.prune(start_marker, end_marker))
+        return Node(label=self.label, children=children, start=self.start, end=self.end)
+
 
 
     def _flatten_retained(self, flatten_pred_fn):

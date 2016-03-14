@@ -22,7 +22,7 @@ class ASTConverter (object):
     """
     def __init__(self):
         self._node_classes = {}
-        self.__fingerprint_index_table = {}
+        self.fingerprint_index_table = {}
 
     def _get_node_class(self, ast_node):
         t = type(ast_node)
@@ -66,7 +66,7 @@ class ASTConverter (object):
         t = self._ast_to_tree(code, a)
         t.fix_markers_bottom_up()
         t.fix_markers_top_down(code.marker_at_start(), code.marker_at_end())
-        t.update_fingerprint_index(self.__fingerprint_index_table)
+        t.update_fingerprint_index(self.fingerprint_index_table)
         return t
 
     def node_classes(self):

@@ -1,13 +1,13 @@
 import datetime, collections, sys
 
-from zss import simple_tree, compare
+from zss import simple_tree, compare, zs_memo
 
 import parser, ast, _ast
 
 import type_pruning
 
 from ast_to_simple_tree import ASTConverter
-from source_text import SourceText, Marker
+from source_text import SourceText, Marker, longest_common_prefix, longest_common_suffix
 import tree_flattening
 
 
@@ -166,9 +166,43 @@ def simple_distance(A, B, get_children=Node.get_children,
 
 
 
+def common_prefix_and_suffix_matches(A_src, A, B_src, B):
+    A_prefix_end, B_prefix_end = A_src.markers_at_end_of_longest_common_prefix(B_src)
+    A_suffix_start, B_suffix_start = A_src.markers_at_start_of_longest_common_suffix(B_src)
+    matches = []
+    A.common_prefix_matches(matches, B, A_prefix_end, B_prefix_end)
+    A.common_suffix_matches(matches, B, A_suffix_start, B_suffix_start)
+    return matches
+
+
+def prune_prefix_and_suffix_matches(A_src, A, B_src, B):
+    A_prefix_end, B_prefix_end = A_src.markers_at_end_of_longest_common_prefix(B_src)
+    A_suffix_start, B_suffix_start = A_src.markers_at_start_of_longest_common_suffix(B_src)
+    A_pruned = A.prune(A_prefix_end, A_suffix_start)
+    B_pruned = B.prune(B_prefix_end, B_suffix_start)
+    return A_pruned, B_pruned
+
+
+def flatten_trees(A, B):
+    flattened_types, retained_types = tree_flattening.flatten_types()
+    flattened_type_names = [t.__name__ for t in flattened_types]
+
+    def flatten_pred_fn(x):
+        return x.label in flattened_type_names
+
+    fingerprints = {}
+    A_flat = A.flatten(flatten_pred_fn)
+    B_flat = B.flatten(flatten_pred_fn)
+    A_flat.update_fingerprint_index(fingerprints)
+    B_flat.update_fingerprint_index(fingerprints)
+
+    return A_flat, B_flat
+
+
 
 def test():
     conv = ASTConverter()
+
 
     # st1 = parser.suite(coded1)
     # st2 = parser.suite(coded2)
@@ -183,20 +217,13 @@ def test():
     # A = SourceText.from_file(codee1)
     # B = SourceText.from_file(codee2)
 
-    A_src = SourceText.from_file(open('example_test_v1.py', 'r'))
-    B_src = SourceText.from_file(open('example_test_v2.py', 'r'))
-    # A_src = SourceText.from_file(open('example_test_b_v1.py', 'r'))
-    # B_src = SourceText.from_file(open('example_test_b_v2.py', 'r'))
-
-    A_prefix_end, B_prefix_end = A_src.markers_at_end_of_longest_common_prefix(B_src)
-    A_suffix_start, B_suffix_start = A_src.markers_at_start_of_longest_common_suffix(B_src)
+    # A_src = SourceText.from_file(open('example_test_v1.py', 'r'))
+    # B_src = SourceText.from_file(open('example_test_v2.py', 'r'))
+    A_src = SourceText.from_file(open('example_test_b_v1.py', 'r'))
+    B_src = SourceText.from_file(open('example_test_b_v2.py', 'r'))
 
     A = conv.parse(A_src)
     B = conv.parse(B_src)
-
-    matches = []
-    A.common_prefix_matches(matches, B, A_prefix_end, B_prefix_end)
-    A.common_suffix_matches(matches, B, A_suffix_start, B_suffix_start)
 
 
     node_classes = [getattr(_ast, name) for name in dir(_ast)]
@@ -212,45 +239,42 @@ def test():
         (a.__name__, b.__name__): v for ((a,b), v) in comparison_permitted.items()
     }
 
-    flattened_types, retained_types = tree_flattening.flatten_types()
-    flattened_type_names = [t.__name__ for t in flattened_types]
+    # A_flat, B_flat = flatten_trees(A, B)
+    # matches = common_prefix_and_suffix_matches(A_src, A, B_src, B)
 
-    def flatten_pred_fn(x):
-        return x.label in flattened_type_names
+    # A_pruned, B_pruned = prune_prefix_and_suffix_matches(A_src, A, B_src, B)
+    matches = []
 
-    fingerprints = {}
-    A_flat = A.flatten(flatten_pred_fn)
-    B_flat = B.flatten(flatten_pred_fn)
-    A_flat.update_fingerprint_index(fingerprints)
-    B_flat.update_fingerprint_index(fingerprints)
+
+    print '|A_src|={0}, |B_src|={1}'.format(len(A_src), len(B_src))
+    print '|A_src.lines|={0}, |B_src.lines|={1}, |common prefix lines|={2}, |common suffix lines|={3}'.format(
+        len(A_src.lines), len(B_src.lines), longest_common_prefix(A_src.lines, B_src.lines),
+        longest_common_suffix(A_src.lines, B_src.lines))
 
     print '|A|={0}, |B|={1}, |matches|={2}'.format(len([x for x in A.iter()]), len([x for x in B.iter()]), len(matches))
     print 'A.height={0}, B.height={1}'.format(A.depth, B.depth)
-    print '|A.flattened|={0}, |B.flattened|={1}'.format(len([x for x in A_flat.iter()]), len([x for x in B_flat.iter()]))
-    print 'A.flattened.height={0}, B.flattened.height={1}'.format(A_flat.depth, B_flat.depth)
+    print '|unique fingerprints|={0}'.format(len(conv.fingerprint_index_table))
+    # print '|A.flattened|={0}, |B.flattened|={1}'.format(len([x for x in A_flat.iter()]), len([x for x in B_flat.iter()]))
+    # print 'A.flattened.height={0}, B.flattened.height={1}'.format(A_flat.depth, B_flat.depth)
+    # print '|A.pruned|={0}, |B.pruned|={1}'.format(len([x for x in A_pruned.iter()]), len([x for x in B_pruned.iter()]))
+    # print 'A.pruned.height={0}, B.pruned.height={1}'.format(A_pruned.depth, B_pruned.depth)
 
-    total_comparisons = 0
-    filtered_comparisons = 0
-    for x in A.iter():
-        for y in B.iter():
-            key = x.label, y.label
-            if comparison_permitted_by_label[key]:
-                filtered_comparisons += 1
-            total_comparisons += 1
-
-    print '{0} / {1} comparisons passed'.format(filtered_comparisons, total_comparisons)
-
-
-    d = compare.simple_distance(A_flat, B_flat, simple_tree.Node.get_children, simple_tree.Node.get_label,
-                                comparison_filter=comparison_permitted_by_label,
-                                match_constraints=matches)
 
     t1 = datetime.datetime.now()
 
     # matches = None
-    d = compare.simple_distance(A_flat, B_flat, simple_tree.Node.get_children, simple_tree.Node.get_label,
+    d = compare.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label,
                                 comparison_filter=comparison_permitted_by_label,
                                 match_constraints=matches)
+    d = zs_memo.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label,
+                                comparison_filter=comparison_permitted_by_label,
+                                match_constraints=matches)
+    # d = compare.simple_distance(A_flat, B_flat, simple_tree.Node.get_children, simple_tree.Node.get_label,
+    #                             comparison_filter=comparison_permitted_by_label,
+    #                             match_constraints=matches)
+    # d = zs_memo.simple_distance(A_pruned, B_pruned, simple_tree.Node.get_children, simple_tree.Node.get_label,
+    #                             comparison_filter=comparison_permitted_by_label,
+    #                             match_constraints=None)
     # d = compare.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label, comparison_filter=None)
 
     t2 = datetime.datetime.now()

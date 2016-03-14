@@ -63,10 +63,10 @@ class AnnotatedTree(object):
         # where node_ids are the indices of the node to which they refer in `pstack`
 
         # The loop below pops nodes off in reverse order, so we will end up building a list of nodes
-        # that is a reversed right-to-left pre-order traversal:
+        # that is a left-to-right post-order traversal:
         # The first node is the left-most-leaf, the last is the root
 
-        # `self.nodes` is a list of nodes in order of reversed right-to-left pre-order traversal
+        # `self.nodes` is a list of nodes in order of left-to-right post-order traversal
         # `self.ids` is a list of node ids that provides the node ID of each node in `self.nodes`
 
         # `self.lmds` is a list of indices that index into `self.nodes`
@@ -79,7 +79,7 @@ class AnnotatedTree(object):
         # as `k` where `j` is a descendant of `k`, in other words, each `k` in `self.keyroots` has
         # a different left-most-descendant, and `k` is the furthest ancestor from
         # `left_most_descendant(k)`
-        # `self.keyroots` is in order of reversed right-to-left pre-order traversal
+        # `self.keyroots` is in order of left-to-right post-order traversal
 
         lmds = dict()
         keyroots = dict()
@@ -94,8 +94,10 @@ class AnnotatedTree(object):
             if not self.get_children(n):
                 lmd = i
                 for a in anc:
-                    if a not in lmds: lmds[a] = i
-                    else: break
+                    if a not in lmds:
+                        lmds[a] = i
+                    else:
+                        break
             else:
                 try: lmd = lmds[nid]
                 except:
@@ -105,6 +107,28 @@ class AnnotatedTree(object):
             keyroots[lmd] = i
             i += 1
         self.keyroots = sorted(keyroots.values())
+        for i, k in enumerate(self.keyroots):
+            self.nodes[k].kidx = i
+
+        # Build a map from node to keyroot
+        self.node_to_keyroot = list()
+        for i, n in enumerate(self.nodes):
+            l = self.lmds[i]
+            k = keyroots[l]
+            self.node_to_keyroot.append(k)
+
+    def _check_keyroot_map(self):
+        # check
+        for k_idx in self.keyroots:
+            n_idx = k_idx
+            while n_idx is not None:
+                assert self.node_to_keyroot[n_idx] == k_idx
+                ch = self.get_children(self.nodes[n_idx])
+                if len(ch) > 0:
+                    n_idx = ch[0].nidx
+                else:
+                    n_idx = None
+
 
 
 def simple_distance(A, B, get_children=Node.get_children,
@@ -142,7 +166,7 @@ def simple_distance(A, B, get_children=Node.get_children,
 
     :return: An integer distance [0, inf+)
     """
-    return distance(
+    z = ZSTreeDist(
         A, B, get_children,
         insert_cost=lambda node: label_dist('', get_label(node)),
         remove_cost=lambda node: label_dist(get_label(node), ''),
@@ -150,10 +174,11 @@ def simple_distance(A, B, get_children=Node.get_children,
         comparison_filter=comparison_filter,
         match_constraints=match_constraints,
     )
+    return z.distance()
 
 
-def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
-             comparison_filter=None, match_constraints=None):
+
+class ZSTreeDist (object):
     '''Computes the exact tree edit distance between trees A and B with a
     richer API than :py:func:`zss.simple_distance`.
 
@@ -184,28 +209,87 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
 
     :return: An integer distance [0, inf+)
     '''
-    match_a_to_b = {}
-    if match_constraints is not None:
-        for node_a, node_b in match_constraints:
-            match_a_to_b[node_a] = node_b
+    def __init__(self, A, B, get_children, insert_cost, remove_cost, update_cost,
+         comparison_filter=None, match_constraints=None):
 
-    A, B = AnnotatedTree(A, get_children), AnnotatedTree(B, get_children)
-    treedists = zeros((len(A.nodes), len(B.nodes)), int)
+        self.comparison_filter = comparison_filter
 
-    comparison_count = [0]
-    filtered_comparison_count = [0]
-    comparisons_filtered_out = [0]
-    comparisons_matched_out = [0]
+        self.match_a_to_b = {}
+        if match_constraints is not None:
+            for node_a, node_b in match_constraints:
+                self.match_a_to_b[node_a] = node_b
 
-    def treedist(i, j):
-        Al = A.lmds
-        Bl = B.lmds
-        An = A.nodes
-        Bn = B.nodes
+        self.A, self.B = AnnotatedTree(A, get_children), AnnotatedTree(B, get_children)
+        self.treedists = zeros((len(self.A.nodes), len(self.B.nodes)), int)
+
+        self.insert_cost = insert_cost
+        self.remove_cost = remove_cost
+        self.update_cost = update_cost
+
+        self.comparison_count = 0
+        self.filtered_comparison_count = 0
+        self.comparisons_filtered_out = 0
+        self.comparisons_matched_out = 0
+
+        self.kr_done = zeros((len(self.A.keyroots), len(self.B.keyroots)), int)
+
+        self._cache = {}
+
+
+    def distance(self):
+        # for i in self.A.keyroots:
+        #     for j in self.B.keyroots:
+        #         self.forest_dist(i, j)
+
+        dist = self.get(len(self.A.nodes)-1, len(self.B.nodes)-1)
+
+        print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
+            self.filtered_comparison_count, self.comparison_count, self.comparisons_filtered_out, self.comparisons_matched_out)
+
+        return dist
+
+
+    def get(self, i, j):
+        k_i = self.A.node_to_keyroot[i]
+        k_j = self.B.node_to_keyroot[j]
+
+        kn_i = self.A.nodes[k_i]
+        kn_j = self.B.nodes[k_j]
+
+        fg_i = kn_i.fingerprint_index
+        fg_j = kn_j.fingerprint_index
+
+        key = fg_i, fg_j
+
+        entry = self._cache.get(key)
+        if entry is None:
+            self.forest_dist(k_i, k_j)
+            entry = k_i, k_j
+            self._cache[key] = entry
+            return self.treedists[i][j]
+        else:
+            ck_i, ck_j = entry
+            u = k_i - ck_i
+            v = k_j - ck_j
+            return self.treedists[i-u][j-v]
+
+
+    def forest_dist(self, i, j):
+        Al = self.A.lmds
+        Bl = self.B.lmds
+        An = self.A.nodes
+        Bn = self.B.nodes
+
+        kidx_i = self.A.node_to_keyroot[i]
+        kidx_j = self.B.node_to_keyroot[j]
+        kn_i = self.A.nodes[kidx_i]
+        kn_j = self.B.nodes[kidx_j]
+
+        self.kr_done[kn_i.kidx][kn_j.kidx] = 1
 
         filter_key = An[i].label, Bn[j].label
-        permitted = comparison_filter[filter_key] if comparison_filter is not None else True
-        match_target = match_a_to_b.get(An[i])
+        permitted = self.comparison_filter[filter_key] if self.comparison_filter is not None else True
+        match_target = self.match_a_to_b.get(An[i])
 
         # The left-most ancestor of node `i` is `Al[i]`. Its index will be smaller than that of `i`.
         # `i - Al[i] + 1` will be the number of nodes in the subtree rooted at node `i`.
@@ -226,9 +310,9 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
         if permitted and match_target is None:
             fd = zeros((m,n), int)
             for x in xrange(1, m): # δ(l(i1)..i, θ) = δ(l(1i)..1-1, θ) + γ(v → λ)
-                fd[x][0] = fd[x-1][0] + remove_cost(An[x+ioff])
+                fd[x][0] = fd[x-1][0] + self.remove_cost(An[x+ioff])
             for y in xrange(1, n): # δ(θ, l(j1)..j) = δ(θ, l(j1)..j-1) + γ(λ → w)
-                fd[0][y] = fd[0][y-1] + insert_cost(Bn[y+joff])
+                fd[0][y] = fd[0][y-1] + self.insert_cost(Bn[y+joff])
 
             # `x` and `y` are indices into the forest distance matrix `fd`
             for x in xrange(1, m): ## the plus one is for the xrange impl
@@ -242,11 +326,11 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
                         #                   | δ(l(i1)..i-1, l(j1)..j-1) + γ(v → w)
                         #                   +-
                         fd[x][y] = min(
-                            fd[x-1][y] + remove_cost(An[x+ioff]),
-                            fd[x][y-1] + insert_cost(Bn[y+joff]),
-                            fd[x-1][y-1] + update_cost(An[x+ioff], Bn[y+joff]),
+                            fd[x-1][y] + self.remove_cost(An[x+ioff]),
+                            fd[x][y-1] + self.insert_cost(Bn[y+joff]),
+                            fd[x-1][y-1] + self.update_cost(An[x+ioff], Bn[y+joff]),
                         )
-                        treedists[x+ioff][y+joff] = fd[x][y]
+                        self.treedists[x+ioff][y+joff] = fd[x][y]
                     else:
                         #                   +-
                         #                   | δ(l(i1)..i-1, l(j1)..j) + γ(v → λ)
@@ -263,12 +347,12 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
                         q = Bl[y+joff]-1-joff
                         #print (p, q), (len(fd), len(fd[0]))
                         fd[x][y] = min(
-                            fd[x-1][y] + remove_cost(An[x+ioff]),
-                            fd[x][y-1] + insert_cost(Bn[y+joff]),
-                            fd[p][q] + treedists[x+ioff][y+joff]
+                            fd[x-1][y] + self.remove_cost(An[x+ioff]),
+                            fd[x][y-1] + self.insert_cost(Bn[y+joff]),
+                            fd[p][q] + self.get(x+ioff, y+joff)
                         )
-            comparison_count[0] += (m-1) * (n-1)
-            filtered_comparison_count[0] += (m-1) * (n-1)
+            self.comparison_count += (m-1) * (n-1)
+            self.filtered_comparison_count += (m-1) * (n-1)
         else:
             nodes_matched = match_target is Bn[j]
 
@@ -290,25 +374,15 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
                         cost = abs(x-y)
                     else:
                         cost = x + y
-                    treedists[nx.nidx][ny.nidx] = cost
+                    self.treedists[nx.nidx][ny.nidx] = cost
 
                     ny = ny.children[0] if len(ny.children) > 0 else None
 
                 nx = nx.children[0] if len(nx.children) > 0 else None
 
             saved = (m-1) * (n-1)
-            comparison_count[0] += saved
+            self.comparison_count += saved
             if match_target is not None:
-                comparisons_matched_out[0] += saved
+                self.comparisons_matched_out += saved
             else:
-                comparisons_filtered_out[0] += saved
-
-
-    for i in A.keyroots:
-        for j in B.keyroots:
-            treedist(i,j)
-
-    print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
-        filtered_comparison_count[0], comparison_count[0], comparisons_filtered_out[0], comparisons_matched_out[0])
-
-    return treedists[-1][-1]
+                self.comparisons_filtered_out += saved
