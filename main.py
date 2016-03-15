@@ -1,4 +1,4 @@
-import datetime, collections, sys
+import datetime, collections, sys, argparse
 
 from zss import simple_tree, compare, zs_memo
 
@@ -190,37 +190,24 @@ def flatten_trees(A, B):
     def flatten_pred_fn(x):
         return x.label in flattened_type_names
 
-    fingerprints = {}
     A_flat = A.flatten(flatten_pred_fn)
     B_flat = B.flatten(flatten_pred_fn)
-    A_flat.update_fingerprint_index(fingerprints)
-    B_flat.update_fingerprint_index(fingerprints)
 
     return A_flat, B_flat
 
 
+def compute_fingerprints(A, B):
+    fingerprints = {}
+    A.update_fingerprint_index(fingerprints)
+    B.update_fingerprint_index(fingerprints)
+    return fingerprints
 
-def test():
+
+
+def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix=False,
+         memo=False):
     conv = ASTConverter()
 
-
-    # st1 = parser.suite(coded1)
-    # st2 = parser.suite(coded2)
-    #
-    # A = tuple_to_tree(st1.totuple())
-    # B = tuple_to_tree(st2.totuple())
-
-    # A = SourceText.from_file(codea1)
-    # B = SourceText.from_file(codea2)
-    # A = SourceText.from_file(coded1)
-    # B = SourceText.from_file(coded2)
-    # A = SourceText.from_file(codee1)
-    # B = SourceText.from_file(codee2)
-
-    # A_src = SourceText.from_file(open('example_test_v1.py', 'r'))
-    # B_src = SourceText.from_file(open('example_test_v2.py', 'r'))
-    A_src = SourceText.from_file(open('example_test_b_v1.py', 'r'))
-    B_src = SourceText.from_file(open('example_test_b_v2.py', 'r'))
 
     A = conv.parse(A_src)
     B = conv.parse(B_src)
@@ -231,58 +218,108 @@ def test():
     node_classes.sort(key=lambda x: x.__name__)
 
 
-    comparison_permitted = type_pruning.compute_node_type_compatibility_by_grammar(node_classes)
-
-    # print type_pruning.type_compatbility_map_to_matrix(node_classes, comparison_permitted)
-
-    comparison_permitted_by_label = {
-        (a.__name__, b.__name__): v for ((a,b), v) in comparison_permitted.items()
-    }
-
-    # A_flat, B_flat = flatten_trees(A, B)
-    # matches = common_prefix_and_suffix_matches(A_src, A, B_src, B)
-
-    # A_pruned, B_pruned = prune_prefix_and_suffix_matches(A_src, A, B_src, B)
-    matches = []
+    base_fingerprints = compute_fingerprints(A, B)
 
 
+    A_opt = A
+    B_opt = B
+
+
+    if type_filtering:
+        comparison_permitted = type_pruning.compute_node_type_compatibility_by_grammar(node_classes)
+
+        comparison_permitted_by_label = {
+            (a.__name__, b.__name__): v for ((a,b), v) in comparison_permitted.items()
+        }
+    else:
+        comparison_permitted_by_label = None
+
+
+    if flatten:
+        A_opt, B_opt = flatten_trees(A_opt, B_opt)
+
+    if common_prefix_suffix:
+        A_opt, B_opt = prune_prefix_and_suffix_matches(A_src, A_opt, B_src, B_opt)
+
+
+    opt_fingerprints = compute_fingerprints(A_opt, B_opt)
+
+
+    print 'SOURCE CODE STATS:'
     print '|A_src|={0}, |B_src|={1}'.format(len(A_src), len(B_src))
     print '|A_src.lines|={0}, |B_src.lines|={1}, |common prefix lines|={2}, |common suffix lines|={3}'.format(
         len(A_src.lines), len(B_src.lines), longest_common_prefix(A_src.lines, B_src.lines),
         longest_common_suffix(A_src.lines, B_src.lines))
+    print ''
+    print 'BASE CASE TREE STATS:'
+    print '|A|={0}, |B|={1}, A.height={2}, B.height={3}'.format(len([x for x in A.iter()]), len([x for x in B.iter()]),
+                                                                A.depth, B.depth)
+    print '|fingerprints(A, B)|={0}'.format(len(base_fingerprints))
+    print ''
+    print 'OPTIMISED TREE STATS:'
+    print '|A_opt|={0}, |B_opt|={1}, A_opt.height={2}, B_opt.height={3}'.format(len([x for x in A_opt.iter()]),
+                                                                                len([x for x in B_opt.iter()]),
+                                                                                A_opt.depth, B_opt.depth)
+    print '|fingerprints(A_opt, B_opt)|={0}'.format(len(opt_fingerprints))
 
-    print '|A|={0}, |B|={1}, |matches|={2}'.format(len([x for x in A.iter()]), len([x for x in B.iter()]), len(matches))
-    print 'A.height={0}, B.height={1}'.format(A.depth, B.depth)
-    print '|unique fingerprints|={0}'.format(len(conv.fingerprint_index_table))
-    # print '|A.flattened|={0}, |B.flattened|={1}'.format(len([x for x in A_flat.iter()]), len([x for x in B_flat.iter()]))
-    # print 'A.flattened.height={0}, B.flattened.height={1}'.format(A_flat.depth, B_flat.depth)
-    # print '|A.pruned|={0}, |B.pruned|={1}'.format(len([x for x in A_pruned.iter()]), len([x for x in B_pruned.iter()]))
-    # print 'A.pruned.height={0}, B.pruned.height={1}'.format(A_pruned.depth, B_pruned.depth)
 
+    # print ''
+    # print 'BASE CASE:'
+    # t1 = datetime.datetime.now()
+    # d = compare.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label)
+    # t2 = datetime.datetime.now()
+    # print 'Distance={0}, took {1}'.format(d, t2-t1)
 
+    print ''
+    print 'WITH CHOSEN OPTIMISATIONS:'
     t1 = datetime.datetime.now()
-
-    # matches = None
-    d = compare.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label,
-                                comparison_filter=comparison_permitted_by_label,
-                                match_constraints=matches)
-    d = zs_memo.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label,
-                                comparison_filter=comparison_permitted_by_label,
-                                match_constraints=matches)
-    # d = compare.simple_distance(A_flat, B_flat, simple_tree.Node.get_children, simple_tree.Node.get_label,
-    #                             comparison_filter=comparison_permitted_by_label,
-    #                             match_constraints=matches)
-    # d = zs_memo.simple_distance(A_pruned, B_pruned, simple_tree.Node.get_children, simple_tree.Node.get_label,
-    #                             comparison_filter=comparison_permitted_by_label,
-    #                             match_constraints=None)
-    # d = compare.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label, comparison_filter=None)
-
+    if memo:
+        d = zs_memo.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
+                                    comparison_filter=comparison_permitted_by_label)
+    else:
+        d = compare.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
+                                    comparison_filter=comparison_permitted_by_label)
     t2 = datetime.datetime.now()
-    print t2 - t1
+    print 'Distance={0}, took {1}'.format(d, t2-t1)
 
-    print 'Distance={0}'.format(d)
+
+
+def get_data(data):
+    if data == 'a':
+        return SourceText(codea1), SourceText(codea2)
+    elif data == 'b':
+        return SourceText(codeb1), SourceText(codeb2)
+    elif data == 'c':
+        return SourceText(codec1), SourceText(codec2)
+    elif data == 'd':
+        return SourceText(coded1), SourceText(coded2)
+    elif data == 'e':
+        return SourceText(codee1), SourceText(codee2)
+    elif data == 'exa':
+        return SourceText.from_file(open('example_test_v1.py', 'r')),\
+               SourceText.from_file(open('example_test_v2.py', 'r'))
+    elif data == 'exb':
+        return SourceText.from_file(open('example_test_b_v1.py', 'r')),\
+               SourceText.from_file(open('example_test_b_v2.py', 'r'))
+    elif data == 'exb2':
+        return SourceText.from_file(open('example_test_b_v1.py', 'r')),\
+               SourceText.from_file(open('example_test_b_v3.py', 'r'))
+    else:
+        raise ValueError("Could not get example named {0}".format(data))
 
 
 if __name__ == '__main__':
-    test()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('data', type=str, help="Which data to process; 'a'-'e' for small examples, "
+                        "'exa' for a ~360 line Python file, 'exb' for a ~1600 line Python file with localised changes, "
+                        "'exb2' for a 'exb' with changes at the beginning and end")
+    parser.add_argument('--type_filter', action='store_true', help="Enable type compatibility filtering")
+    parser.add_argument('--flatten', action='store_true', help="Enable tree flattening optimisation")
+    parser.add_argument('--common_ends', action='store_true', help="Remove common prefix and suffix")
+    parser.add_argument('--memo', action='store_true', help="Uses memoised Zhang-Shasha")
+    args = parser.parse_args()
+
+    A_src, B_src = get_data(args.data)
+
+    test(A_src, B_src, args.type_filter, args.flatten, args.common_ends, args.memo)
 

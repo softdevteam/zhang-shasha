@@ -13,7 +13,7 @@ class NodeClass (object):
         self.cls_name = cls_name
 
     def node(self, value, children, start=None, end=None):
-        return simple_tree.Node(self.cls_name, children, start=start, end=end)
+        return simple_tree.Node(self.cls_name, value, children, start=start, end=end)
 
 
 class ASTConverter (object):
@@ -22,7 +22,6 @@ class ASTConverter (object):
     """
     def __init__(self):
         self._node_classes = {}
-        self.fingerprint_index_table = {}
 
     def _get_node_class(self, ast_node):
         t = type(ast_node)
@@ -66,7 +65,6 @@ class ASTConverter (object):
         t = self._ast_to_tree(code, a)
         t.fix_markers_bottom_up()
         t.fix_markers_top_down(code.marker_at_start(), code.marker_at_end())
-        t.update_fingerprint_index(self.fingerprint_index_table)
         return t
 
     def node_classes(self):

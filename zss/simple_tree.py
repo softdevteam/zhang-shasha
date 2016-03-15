@@ -24,10 +24,12 @@ class Node(object):
             .addkid(Node("e"))
     """
 
-    def __init__(self, label, children=None, start=None, end=None):
+    def __init__(self, label, value='', children=None, start=None, end=None):
         self.label = label
+        self.value = value
         self.children = children or list()
         self.__sha = None
+        self.__content_sha = None
         self.__fingerprint_index = None
         self.__depth = None
         self.__subtree_size = None
@@ -85,6 +87,15 @@ class Node(object):
             hasher.update(s)
             self.__sha = binascii.hexlify(hasher.digest())
         return self.__sha
+
+    @property
+    def sha_content(self):
+        if self.__content_sha is None:
+            hasher = hashlib.sha256()
+            s = '{0}[{1}]({2})'.format(self.label, self.value, ','.join(child.sha for child in self.children))
+            hasher.update(s)
+            self.__content_sha = binascii.hexlify(hasher.digest())
+        return self.__content_sha
 
     @property
     def depth(self):
