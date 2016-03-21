@@ -196,16 +196,18 @@ def flatten_trees(A, B):
     return A_flat, B_flat
 
 
-def compute_fingerprints(A, B):
+def compute_shape_fingerprints(A, B):
     fingerprints = {}
-    A.update_fingerprint_index(fingerprints)
-    B.update_fingerprint_index(fingerprints)
-    return fingerprints
+    A_nodes_by_index = {}
+    B_nodes_by_index = {}
+    A.update_fingerprint_index(fingerprints, A_nodes_by_index)
+    B.update_fingerprint_index(fingerprints, B_nodes_by_index)
+    return fingerprints, A_nodes_by_index, B_nodes_by_index
 
 
 
 def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix=False,
-         memo=False):
+         memo=False, fingerprint_matching=False):
     conv = ASTConverter()
 
 
@@ -218,7 +220,7 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
     node_classes.sort(key=lambda x: x.__name__)
 
 
-    base_fingerprints = compute_fingerprints(A, B)
+    base_fingerprints, A_nodes_by_index, B_nodes_by_index = compute_shape_fingerprints(A, B)
 
 
     A_opt = A
@@ -241,44 +243,61 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
     if common_prefix_suffix:
         A_opt, B_opt = prune_prefix_and_suffix_matches(A_src, A_opt, B_src, B_opt)
 
+    if fingerprint_matching:
+        unique_node_matches = []
+        potential_match_fingerprints = set()
+        num_potentially_matching_nodes_A = 0
+        num_potentially_matching_nodes_B = 0
+        for A_fg_index, A_nodes in A_nodes_by_index.items():
+            B_nodes = B_nodes_by_index.get(A_fg_index)
+            if B_nodes is not None:
+                if len(A_nodes) == 1 and len(B_nodes) == 1:
+                    unique_node_matches.append((A_nodes[0], B_nodes[0]))
+                elif len(A_nodes) == len(B_nodes):
+                    potential_match_fingerprints.add(A_fg_index)
+                    num_potentially_matching_nodes_A += len(A_nodes)
+                    num_potentially_matching_nodes_B += len(B_nodes)
+    else:
+        unique_node_matches = None
+        potential_match_fingerprints = None
+        num_potentially_matching_nodes_A = None
+        num_potentially_matching_nodes_B = None
 
-    opt_fingerprints = compute_fingerprints(A_opt, B_opt)
 
 
-    print 'SOURCE CODE STATS:'
-    print '|A_src|={0}, |B_src|={1}'.format(len(A_src), len(B_src))
-    print '|A_src.lines|={0}, |B_src.lines|={1}, |common prefix lines|={2}, |common suffix lines|={3}'.format(
-        len(A_src.lines), len(B_src.lines), longest_common_prefix(A_src.lines, B_src.lines),
+    opt_fingerprints = compute_shape_fingerprints(A_opt, B_opt)
+
+
+    print 'SOURCE CODE STATS: |A_src|={0}, |B_src|={1}, |A_src.lines|={2}, |B_src.lines|={3}, ' \
+          '|common prefix lines|={4}, |common suffix lines|={5}'.format(
+        len(A_src), len(B_src), len(A_src.lines), len(B_src.lines), longest_common_prefix(A_src.lines, B_src.lines),
         longest_common_suffix(A_src.lines, B_src.lines))
-    print ''
-    print 'BASE CASE TREE STATS:'
-    print '|A|={0}, |B|={1}, A.height={2}, B.height={3}'.format(len([x for x in A.iter()]), len([x for x in B.iter()]),
-                                                                A.depth, B.depth)
-    print '|fingerprints(A, B)|={0}'.format(len(base_fingerprints))
-    print ''
-    print 'OPTIMISED TREE STATS:'
-    print '|A_opt|={0}, |B_opt|={1}, A_opt.height={2}, B_opt.height={3}'.format(len([x for x in A_opt.iter()]),
-                                                                                len([x for x in B_opt.iter()]),
-                                                                                A_opt.depth, B_opt.depth)
-    print '|fingerprints(A_opt, B_opt)|={0}'.format(len(opt_fingerprints))
+    print 'BASE CASE TREE STATS: |A|={0}, |B|={1}, A.height={2}, B.height={3}, |shape_fingerprints(A, B)|={4}'.format(
+        len([x for x in A.iter()]), len([x for x in B.iter()]),
+        A.depth, B.depth, len(base_fingerprints))
+    print 'OPTIMISED TREE STATS: |A_opt|={0}, |B_opt|={1}, A_opt.height={2}, B_opt.height={3}, ' \
+        '|shape_fingerprints(A_opt, B_opt)|={4}'.format(
+        len([x for x in A_opt.iter()]), len([x for x in B_opt.iter()]),
+        A_opt.depth, B_opt.depth, len(opt_fingerprints))
+    if unique_node_matches is not None:
+        print '|unique fingerprint matches|={0}, |potential match fgs|={1}, ' \
+              '|potential matches in A|={2}, |potential matches in B|={3}'.format(
+                    len(unique_node_matches), len(potential_match_fingerprints),
+                    num_potentially_matching_nodes_A, num_potentially_matching_nodes_B)
 
 
-    # print ''
-    # print 'BASE CASE:'
-    # t1 = datetime.datetime.now()
-    # d = compare.simple_distance(A, B, simple_tree.Node.get_children, simple_tree.Node.get_label)
-    # t2 = datetime.datetime.now()
-    # print 'Distance={0}, took {1}'.format(d, t2-t1)
-
     print ''
-    print 'WITH CHOSEN OPTIMISATIONS:'
     t1 = datetime.datetime.now()
     if memo:
         d = zs_memo.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
-                                    comparison_filter=comparison_permitted_by_label)
+                                    comparison_filter=comparison_permitted_by_label,
+                                    unique_match_constraints=unique_node_matches,
+                                    potential_match_fingerprints=potential_match_fingerprints)
     else:
         d = compare.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
-                                    comparison_filter=comparison_permitted_by_label)
+                                    comparison_filter=comparison_permitted_by_label,
+                                    unique_match_constraints=unique_node_matches,
+                                    potential_match_fingerprints=potential_match_fingerprints)
     t2 = datetime.datetime.now()
     print 'Distance={0}, took {1}'.format(d, t2-t1)
 
@@ -317,9 +336,10 @@ if __name__ == '__main__':
     parser.add_argument('--flatten', action='store_true', help="Enable tree flattening optimisation")
     parser.add_argument('--common_ends', action='store_true', help="Remove common prefix and suffix")
     parser.add_argument('--memo', action='store_true', help="Uses memoised Zhang-Shasha")
+    parser.add_argument('--fg_match', action='store_true', help="Enable fingerprint matching")
     args = parser.parse_args()
 
     A_src, B_src = get_data(args.data)
 
-    test(A_src, B_src, args.type_filter, args.flatten, args.common_ends, args.memo)
+    test(A_src, B_src, args.type_filter, args.flatten, args.common_ends, args.memo, args.fg_match)
 

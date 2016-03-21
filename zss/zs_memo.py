@@ -132,8 +132,9 @@ class AnnotatedTree(object):
 
 
 def simple_distance(A, B, get_children=Node.get_children,
-        get_label=Node.get_label, label_dist=strdist,
-                    comparison_filter=None, match_constraints=None):
+                    get_label=Node.get_label, label_dist=strdist,
+                    comparison_filter=None, unique_match_constraints=None,
+                    potential_match_fingerprints=None):
     """Computes the exact tree edit distance between trees A and B.
 
     Use this function if both of these things are true:
@@ -172,7 +173,8 @@ def simple_distance(A, B, get_children=Node.get_children,
         remove_cost=lambda node: label_dist(get_label(node), ''),
         update_cost=lambda a, b: label_dist(get_label(a), get_label(b)),
         comparison_filter=comparison_filter,
-        match_constraints=match_constraints,
+        unique_match_constraints=unique_match_constraints,
+        potential_match_fingerprints=potential_match_fingerprints,
     )
     return z.distance()
 
@@ -210,14 +212,16 @@ class ZSTreeDist (object):
     :return: An integer distance [0, inf+)
     '''
     def __init__(self, A, B, get_children, insert_cost, remove_cost, update_cost,
-         comparison_filter=None, match_constraints=None):
+                 comparison_filter=None, unique_match_constraints=None,
+                 potential_match_fingerprints=None):
 
         self.comparison_filter = comparison_filter
 
         self.match_a_to_b = {}
-        if match_constraints is not None:
-            for node_a, node_b in match_constraints:
+        if unique_match_constraints is not None:
+            for node_a, node_b in unique_match_constraints:
                 self.match_a_to_b[node_a] = node_b
+        self.potential_match_fingerprints = potential_match_fingerprints
 
         self.A, self.B = AnnotatedTree(A, get_children), AnnotatedTree(B, get_children)
         self.treedists = zeros((len(self.A.nodes), len(self.B.nodes)), int)
@@ -287,9 +291,27 @@ class ZSTreeDist (object):
 
         self.kr_done[kn_i.kidx][kn_j.kidx] = 1
 
+        Ai_fg = An[i].fingerprint_index
+        Bj_fg = Bn[j].fingerprint_index
+
         filter_key = An[i].label, Bn[j].label
-        permitted = self.comparison_filter[filter_key] if self.comparison_filter is not None else True
+        full_test_required = self.comparison_filter[filter_key] if self.comparison_filter is not None else True
+        nodes_matched = False
         match_target = self.match_a_to_b.get(An[i])
+
+        if self.potential_match_fingerprints is not None:
+            if Ai_fg in self.potential_match_fingerprints or Bj_fg in self.potential_match_fingerprints:
+                full_test_required = False
+
+        if Ai_fg == Bj_fg:
+            full_test_required = False
+            nodes_matched = True
+
+        if match_target is not None:
+            full_test_required = False
+
+            if match_target is Bn[j]:
+                nodes_matched = True
 
         # The left-most ancestor of node `i` is `Al[i]`. Its index will be smaller than that of `i`.
         # `i - Al[i] + 1` will be the number of nodes in the subtree rooted at node `i`.
@@ -307,7 +329,7 @@ class ZSTreeDist (object):
         ioff = Al[i] - 1
         joff = Bl[j] - 1
 
-        if permitted and match_target is None:
+        if full_test_required:
             fd = zeros((m,n), int)
             for x in xrange(1, m): # δ(l(i1)..i, θ) = δ(l(1i)..1-1, θ) + γ(v → λ)
                 fd[x][0] = fd[x-1][0] + self.remove_cost(An[x+ioff])
@@ -354,8 +376,6 @@ class ZSTreeDist (object):
             self.comparison_count += (m-1) * (n-1)
             self.filtered_comparison_count += (m-1) * (n-1)
         else:
-            nodes_matched = match_target is Bn[j]
-
             # Using the normal code above as reference, we can see that
             # we only write the treedist array for nodes that are on the left-most path
             # from the subtree rooted at i,j

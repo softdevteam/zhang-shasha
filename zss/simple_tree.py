@@ -121,10 +121,12 @@ class Node(object):
         nodes = sha_to_nodes.setdefault(self.sha, list())
         nodes.append(self)
 
-    def update_fingerprint_index(self, sha_to_index):
+    def update_fingerprint_index(self, sha_to_index, sha_indices_to_nodes):
         for child in self.children:
-            child.update_fingerprint_index(sha_to_index)
+            child.update_fingerprint_index(sha_to_index, sha_indices_to_nodes)
         self.__fingerprint_index = sha_to_index.setdefault(self.sha, len(sha_to_index))
+        nodes_for_index = sha_indices_to_nodes.setdefault(self.__fingerprint_index, list())
+        nodes_for_index.append(self)
 
     def all_nodes(self, node_list):
         for child in self.children:

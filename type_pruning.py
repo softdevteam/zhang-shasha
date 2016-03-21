@@ -1,6 +1,8 @@
 import collections
 import _ast
 
+import python_ast_structure
+
 
 def ast_base(cls):
     return cls.__bases__[0]
@@ -134,113 +136,9 @@ def compute_node_type_compatibility_map_by_containment(node_classes, type_contai
     return comparison_permitted
 
 
-_node_type_contain = {
-    # mod
-    _ast.Module: {_ast.stmt},
-    _ast.Interactive: {_ast.stmt},
-    _ast.Expression: {_ast.expr},
-    _ast.Suite: {_ast.stmt},
+_node_type_contain = {node_type: python_ast_structure.spec_to_type_set(spec)
+                            for node_type, spec in python_ast_structure.ast_type_to_spec.items()}
 
-    # stmt
-    _ast.FunctionDef: {_ast.expr, _ast.stmt},
-    _ast.ClassDef: {_ast.expr, _ast.stmt},
-    _ast.Return: {_ast.expr},
-    _ast.Delete: {_ast.expr},
-    _ast.Assign: {_ast.expr},
-    _ast.AugAssign: {_ast.expr, _ast.operator},
-    _ast.Print: {_ast.expr},
-    _ast.For: {_ast.expr, _ast.stmt},
-    _ast.While: {_ast.expr, _ast.stmt},
-    _ast.If: {_ast.expr, _ast.stmt},
-    _ast.With: {_ast.expr, _ast.stmt},
-    _ast.Raise: {_ast.expr},
-    _ast.TryExcept: {_ast.stmt, _ast.excepthandler},
-    _ast.TryFinally: {_ast.stmt},
-    _ast.Assert: {_ast.expr},
-    _ast.Import: {},
-    _ast.ImportFrom: {},
-    _ast.Exec: {_ast.expr},
-    _ast.Global: set(),
-    _ast.Expr: {_ast.expr},
-    _ast.Pass: {_ast.expr},
-    _ast.Break: {_ast.expr},
-    _ast.Continue: {_ast.expr},
-
-    # expr
-    _ast.BoolOp: {_ast.expr},
-    _ast.BinOp: {_ast.expr, _ast.operator},
-    _ast.UnaryOp: {_ast.expr, _ast.unaryop},
-    _ast.Lambda: {_ast.expr},
-    _ast.IfExp: {_ast.expr},
-    _ast.Dict: {_ast.expr},
-    _ast.Set: {_ast.expr},
-    _ast.ListComp: {_ast.expr},
-    _ast.SetComp: {_ast.expr},
-    _ast.DictComp: {_ast.expr},
-    _ast.GeneratorExp: {_ast.expr},
-    _ast.Yield: {_ast.expr},
-    _ast.Compare: {_ast.expr, _ast.cmpop},
-    _ast.Call: {_ast.expr},
-    _ast.Repr: {_ast.expr},
-    _ast.Num: {},
-    _ast.Str: {},
-    _ast.Attribute: {_ast.expr, _ast.expr_context},
-    _ast.Subscript: {_ast.expr, _ast.expr_context, _ast.slice},
-    _ast.Name: {_ast.expr_context},
-    _ast.List: {_ast.expr, _ast.expr_context},
-    _ast.Tuple: {_ast.expr, _ast.expr_context},
-
-    # expr_context
-    _ast.Load: {},
-    _ast.Store: {},
-    _ast.Del: {},
-    _ast.AugLoad: {},
-    _ast.AugStore: {},
-    _ast.Param: {},
-
-    # slice
-    _ast.Ellipsis: {},
-    _ast.Slice: {_ast.expr},
-    _ast.ExtSlice: {_ast.slice},
-    _ast.Index: {_ast.Expression},
-
-    # boolop
-    _ast.And: {},
-    _ast.Or: {},
-
-    # operator
-    _ast.Add: {},
-    _ast.Sub: {},
-    _ast.Mult: {},
-    _ast.Div: {},
-    _ast.Mod: {},
-    _ast.Pow: {},
-    _ast.LShift: {},
-    _ast.RShift: {},
-    _ast.BitOr: {},
-    _ast.BitXor: {},
-    _ast.BitAnd: {},
-    _ast.FloorDiv: {},
-
-    # unaryop
-    _ast.Invert: {},
-    _ast.Not: {},
-    _ast.UAdd: {},
-    _ast.USub: {},
-
-    # cmpop
-    _ast.Eq: {},
-    _ast.NotEq: {},
-    _ast.Lt: {},
-    _ast.LtE: {},
-    _ast.Gt: {},
-    _ast.GtE: {},
-    _ast.Is: {},
-    _ast.IsNot: {},
-    _ast.In: {},
-    _ast.NotIn: {},
-
-}
 
 def compute_node_type_compatibility_by_grammar(node_classes):
     """
