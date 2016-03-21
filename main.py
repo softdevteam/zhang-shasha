@@ -220,9 +220,6 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
     node_classes.sort(key=lambda x: x.__name__)
 
 
-    base_fingerprints, A_nodes_by_index, B_nodes_by_index = compute_shape_fingerprints(A, B)
-
-
     A_opt = A
     B_opt = B
 
@@ -242,6 +239,10 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
 
     if common_prefix_suffix:
         A_opt, B_opt = prune_prefix_and_suffix_matches(A_src, A_opt, B_src, B_opt)
+
+
+    base_fingerprints, A_nodes_by_index, B_nodes_by_index = compute_shape_fingerprints(A_opt, B_opt)
+
 
     if fingerprint_matching:
         unique_node_matches = []

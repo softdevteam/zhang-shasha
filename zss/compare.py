@@ -210,8 +210,9 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
         Bj_fg = Bn[j].fingerprint_index
 
         filter_key = An[i].label, Bn[j].label
-        full_test_required = comparison_filter[filter_key] if comparison_filter is not None else True
+        full_test_required = True
         nodes_matched = False
+        filtered = False
         match_target = match_a_to_b.get(An[i])
 
         if potential_match_fingerprints is not None:
@@ -228,6 +229,10 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
             if match_target is Bn[j]:
                 nodes_matched = True
 
+        if comparison_filter is not None:
+            if not comparison_filter[filter_key]:
+                full_test_required = False
+                filtered = True
 
 
         # The left-most ancestor of node `i` is `Al[i]`. Its index will be smaller than that of `i`.
@@ -319,10 +324,10 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
 
             saved = (m-1) * (n-1)
             comparison_count[0] += saved
-            if match_target is not None:
-                comparisons_matched_out[0] += saved
-            else:
+            if filtered:
                 comparisons_filtered_out[0] += saved
+            else:
+                comparisons_matched_out[0] += saved
 
 
     for i in A.keyroots:

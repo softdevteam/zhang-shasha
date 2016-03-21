@@ -295,8 +295,9 @@ class ZSTreeDist (object):
         Bj_fg = Bn[j].fingerprint_index
 
         filter_key = An[i].label, Bn[j].label
-        full_test_required = self.comparison_filter[filter_key] if self.comparison_filter is not None else True
+        full_test_required = True
         nodes_matched = False
+        filtered = False
         match_target = self.match_a_to_b.get(An[i])
 
         if self.potential_match_fingerprints is not None:
@@ -312,6 +313,11 @@ class ZSTreeDist (object):
 
             if match_target is Bn[j]:
                 nodes_matched = True
+
+        if self.comparison_filter is not None:
+            if not self.comparison_filter[filter_key]:
+                full_test_required = False
+                filtered = True
 
         # The left-most ancestor of node `i` is `Al[i]`. Its index will be smaller than that of `i`.
         # `i - Al[i] + 1` will be the number of nodes in the subtree rooted at node `i`.
@@ -402,7 +408,7 @@ class ZSTreeDist (object):
 
             saved = (m-1) * (n-1)
             self.comparison_count += saved
-            if match_target is not None:
-                self.comparisons_matched_out += saved
-            else:
+            if filtered:
                 self.comparisons_filtered_out += saved
+            else:
+                self.comparisons_matched_out += saved
