@@ -24,7 +24,7 @@ class Node(object):
             .addkid(Node("e"))
     """
 
-    def __init__(self, label, value='', children=None, start=None, end=None):
+    def __init__(self, label, value='', children=None, start=None, end=None, weight=1, original_node=None):
         self.label = label
         self.value = value
         self.children = children or list()
@@ -33,10 +33,12 @@ class Node(object):
         self.__fingerprint_index = None
         self.__depth = None
         self.__subtree_size = None
+        self.__original_node = original_node
         self.start = start
         self.end = end
         self.nidx = -1
         self.kridx = -1
+        self.weight = weight
 
     @staticmethod
     def get_children(node):
@@ -82,19 +84,25 @@ class Node(object):
     @property
     def sha(self):
         if self.__sha is None:
-            hasher = hashlib.sha256()
-            s = '{0}({1})'.format(self.label, ','.join(child.sha for child in self.children))
-            hasher.update(s)
-            self.__sha = binascii.hexlify(hasher.digest())
+            if self.__original_node is None:
+                hasher = hashlib.sha256()
+                s = '{0}({1})'.format(self.label, ','.join(child.sha for child in self.children))
+                hasher.update(s)
+                self.__sha = binascii.hexlify(hasher.digest())
+            else:
+                self.__sha = self.__original_node.sha
         return self.__sha
 
     @property
     def sha_content(self):
         if self.__content_sha is None:
-            hasher = hashlib.sha256()
-            s = '{0}[{1}]({2})'.format(self.label, self.value, ','.join(child.sha for child in self.children))
-            hasher.update(s)
-            self.__content_sha = binascii.hexlify(hasher.digest())
+            if self.__original_node is None:
+                hasher = hashlib.sha256()
+                s = '{0}[{1}]({2})'.format(self.label, self.value, ','.join(child.sha for child in self.children))
+                hasher.update(s)
+                self.__content_sha = binascii.hexlify(hasher.digest())
+            else:
+                self.__content_sha = self.__original_node.sha_content
         return self.__content_sha
 
     @property
@@ -205,6 +213,15 @@ class Node(object):
             if child.end >= start_marker and child.start <= end_marker:
                 children.append(child.prune(start_marker, end_marker))
         return Node(label=self.label, children=children, start=self.start, end=self.end)
+
+    def compact(self, nodes_to_compact):
+        if self in nodes_to_compact:
+            return Node(label=self.label, value=self.value, children=[],
+                        start=self.start, end=self.end, weight=self.subtree_size, original_node=self)
+        else:
+            return Node(label=self.label, value=self.value, children=[c.compact(nodes_to_compact) for c in self.children],
+                        start=self.start, end=self.end, original_node=self)
+
 
 
 

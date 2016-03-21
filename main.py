@@ -207,7 +207,7 @@ def compute_shape_fingerprints(A, B):
 
 
 def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix=False,
-         memo=False, fingerprint_matching=False):
+         memo=False, fingerprint_matching=False, fingerprint_compaction=False):
     conv = ASTConverter()
 
 
@@ -244,6 +244,11 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
     base_fingerprints, A_nodes_by_index, B_nodes_by_index = compute_shape_fingerprints(A_opt, B_opt)
 
 
+    unique_node_matches = None
+    potential_match_fingerprints = None
+    num_potentially_matching_nodes_A = None
+    num_potentially_matching_nodes_B = None
+
     if fingerprint_matching:
         unique_node_matches = []
         potential_match_fingerprints = set()
@@ -258,15 +263,21 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
                     potential_match_fingerprints.add(A_fg_index)
                     num_potentially_matching_nodes_A += len(A_nodes)
                     num_potentially_matching_nodes_B += len(B_nodes)
-    else:
-        unique_node_matches = None
-        potential_match_fingerprints = None
-        num_potentially_matching_nodes_A = None
-        num_potentially_matching_nodes_B = None
+    elif fingerprint_compaction:
+        A_nodes_to_collapse = set()
+        B_nodes_to_collapse = set()
+        for A_fg_index, A_nodes in A_nodes_by_index.items():
+            B_nodes = B_nodes_by_index.get(A_fg_index)
+            if B_nodes is not None:
+                if len(A_nodes) == len(B_nodes):
+                    A_nodes_to_collapse = A_nodes_to_collapse.union(A_nodes)
+                    B_nodes_to_collapse = B_nodes_to_collapse.union(B_nodes)
+        A_opt = A_opt.compact(A_nodes_to_collapse)
+        B_opt = B_opt.compact(B_nodes_to_collapse)
 
 
 
-    opt_fingerprints = compute_shape_fingerprints(A_opt, B_opt)
+    opt_fingerprints, A_nodes_by_index, B_nodes_by_index = compute_shape_fingerprints(A_opt, B_opt)
 
 
     print 'SOURCE CODE STATS: |A_src|={0}, |B_src|={1}, |A_src.lines|={2}, |B_src.lines|={3}, ' \
@@ -338,9 +349,11 @@ if __name__ == '__main__':
     parser.add_argument('--common_ends', action='store_true', help="Remove common prefix and suffix")
     parser.add_argument('--memo', action='store_true', help="Uses memoised Zhang-Shasha")
     parser.add_argument('--fg_match', action='store_true', help="Enable fingerprint matching")
+    parser.add_argument('--fg_compact', action='store_true', help="Enable fingerprint compaction")
     args = parser.parse_args()
 
     A_src, B_src = get_data(args.data)
 
-    test(A_src, B_src, args.type_filter, args.flatten, args.common_ends, args.memo, args.fg_match)
+    test(A_src, B_src, args.type_filter, args.flatten, args.common_ends, args.memo, args.fg_match,
+         args.fg_compact)
 

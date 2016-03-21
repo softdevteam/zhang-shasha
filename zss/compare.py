@@ -143,18 +143,23 @@ def simple_distance(A, B, get_children=Node.get_children,
 
     :return: An integer distance [0, inf+)
     """
+    def update_cost(a, b):
+        if a.fingerprint_index == b.fingerprint_index:
+            return 0
+        elif a.weight == 1 and b.weight == 1:
+            return label_dist(get_label(a), get_label(b))
+        else:
+            return a.weight + b.weight
     return distance(
         A, B, get_children,
-        insert_cost=lambda node: label_dist('', get_label(node)),
-        remove_cost=lambda node: label_dist(get_label(node), ''),
-        update_cost=lambda a, b: label_dist(get_label(a), get_label(b)),
+        update_cost=update_cost,
         comparison_filter=comparison_filter,
         unique_match_constraints=unique_match_constraints,
         potential_match_fingerprints=potential_match_fingerprints,
     )
 
 
-def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
+def distance(A, B, get_children, update_cost,
              comparison_filter=None, unique_match_constraints=None,
              potential_match_fingerprints=None):
     '''Computes the exact tree edit distance between trees A and B with a
@@ -254,9 +259,9 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
         if full_test_required:
             fd = zeros((m,n), int)
             for x in xrange(1, m): # δ(l(i1)..i, θ) = δ(l(1i)..1-1, θ) + γ(v → λ)
-                fd[x][0] = fd[x-1][0] + remove_cost(An[x+ioff])
+                fd[x][0] = fd[x-1][0] + An[x+ioff].weight
             for y in xrange(1, n): # δ(θ, l(j1)..j) = δ(θ, l(j1)..j-1) + γ(λ → w)
-                fd[0][y] = fd[0][y-1] + insert_cost(Bn[y+joff])
+                fd[0][y] = fd[0][y-1] + Bn[y+joff].weight
 
             # `x` and `y` are indices into the forest distance matrix `fd`
             for x in xrange(1, m): ## the plus one is for the xrange impl
@@ -270,8 +275,8 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
                         #                   | δ(l(i1)..i-1, l(j1)..j-1) + γ(v → w)
                         #                   +-
                         fd[x][y] = min(
-                            fd[x-1][y] + remove_cost(An[x+ioff]),
-                            fd[x][y-1] + insert_cost(Bn[y+joff]),
+                            fd[x-1][y] + An[x+ioff].weight,
+                            fd[x][y-1] + Bn[y+joff].weight,
                             fd[x-1][y-1] + update_cost(An[x+ioff], Bn[y+joff]),
                         )
                         treedists[x+ioff][y+joff] = fd[x][y]
@@ -291,8 +296,8 @@ def distance(A, B, get_children, insert_cost, remove_cost, update_cost,
                         q = Bl[y+joff]-1-joff
                         #print (p, q), (len(fd), len(fd[0]))
                         fd[x][y] = min(
-                            fd[x-1][y] + remove_cost(An[x+ioff]),
-                            fd[x][y-1] + insert_cost(Bn[y+joff]),
+                            fd[x-1][y] + An[x+ioff].weight,
+                            fd[x][y-1] + Bn[y+joff].weight,
                             fd[p][q] + treedists[x+ioff][y+joff]
                         )
             comparison_count[0] += (m-1) * (n-1)
