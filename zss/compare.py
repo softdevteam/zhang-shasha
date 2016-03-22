@@ -87,7 +87,7 @@ class AnnotatedTree(object):
         while len(pstack) > 0:
             (n, nid), anc = pstack.pop()
             #print list(anc)
-            n.nidx = len(self.nodes)
+            n.node_index = len(self.nodes)
             self.nodes.append(n)
             self.ids.append(nid)
             #print n.label, [a.label for a in anc]
@@ -313,15 +313,15 @@ def distance(A, B, get_children, update_cost,
             # We can however save some array allocation costs by walking the tree
             nx = An[i]
             while nx is not None:
-                x = nx.nidx - ioff
+                x = nx.node_index - ioff
                 ny = Bn[j]
                 while ny is not None:
-                    y = ny.nidx - joff
+                    y = ny.node_index - joff
                     if nodes_matched:
                         cost = abs(x-y)
                     else:
                         cost = x + y
-                    treedists[nx.nidx][ny.nidx] = cost
+                    treedists[nx.node_index][ny.node_index] = cost
 
                     ny = ny.children[0] if len(ny.children) > 0 else None
 

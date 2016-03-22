@@ -36,9 +36,13 @@ class Node(object):
         self.__original_node = original_node
         self.start = start
         self.end = end
-        self.nidx = -1
-        self.kridx = -1
         self.weight = weight
+        self.node_index = -1
+        self.left_most_descendant_index = -1
+        self.keyroot_node_index = -1
+        self.keyroot_path_length = -1
+        self.index_in_keyroot_list = -1
+        self.dist_to_keyroot = -1
 
     @staticmethod
     def get_children(node):

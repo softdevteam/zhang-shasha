@@ -36,8 +36,7 @@ class AnnotatedTree(object):
         self.root = root
         self.nodes = list()  # a pre-order enumeration of the nodes in the tree
         self.ids = list()    # a matching list of ids
-        self.lmds = list()   # left most descendents
-        self.keyroots = None
+        self.keyroot_indices = None
             # k and k' are nodes specified in the pre-order enumeration.
             # keyroots = {k | there exists no k'>k such that lmd(k) == lmd(k')}
             # see paper for more on keyroots
@@ -69,10 +68,6 @@ class AnnotatedTree(object):
         # `self.nodes` is a list of nodes in order of left-to-right post-order traversal
         # `self.ids` is a list of node ids that provides the node ID of each node in `self.nodes`
 
-        # `self.lmds` is a list of indices that index into `self.nodes`
-        # It provides the left-most-descendant of each node
-        # self.lmds[i] == self.nodes.index(left_most_descendant(self.nodes[i]))
-        #
         # `self.keyroots` is also a list of indices that index into `self.nodes`
         # It lists the indices of keyroot nodes
         # For each keyroot node `k` there exists no keyroot node `j` that has the same left-most-descendant
@@ -81,53 +76,55 @@ class AnnotatedTree(object):
         # `left_most_descendant(k)`
         # `self.keyroots` is in order of left-to-right post-order traversal
 
-        lmds = dict()
-        keyroots = dict()
+        node_ndx_to_lmd_ndx = dict()
+        lmd_ndx_to_keyroot_ndx = dict()
         i = 0
         while len(pstack) > 0:
             (n, nid), anc = pstack.pop()
             #print list(anc)
-            n.nidx = len(self.nodes)
+            n.node_index = len(self.nodes)
             self.nodes.append(n)
             self.ids.append(nid)
             #print n.label, [a.label for a in anc]
             if not self.get_children(n):
                 lmd = i
                 for a in anc:
-                    if a not in lmds:
-                        lmds[a] = i
+                    if a not in node_ndx_to_lmd_ndx:
+                        node_ndx_to_lmd_ndx[a] = i
                     else:
                         break
             else:
-                try: lmd = lmds[nid]
+                try:
+                    lmd = node_ndx_to_lmd_ndx[nid]
                 except:
                     import pdb
                     pdb.set_trace()
-            self.lmds.append(lmd)
-            keyroots[lmd] = i
+            n.left_most_descendant_index = lmd
+            lmd_ndx_to_keyroot_ndx[lmd] = i
             i += 1
-        self.keyroots = sorted(keyroots.values())
-        for i, k in enumerate(self.keyroots):
-            self.nodes[k].kidx = i
+        self.keyroot_indices = sorted(lmd_ndx_to_keyroot_ndx.values())
 
         # Build a map from node to keyroot
-        self.node_to_keyroot = list()
         for i, n in enumerate(self.nodes):
-            l = self.lmds[i]
-            k = keyroots[l]
-            self.node_to_keyroot.append(k)
+            lmd_ndx = n.left_most_descendant_index
+            k_ndx = lmd_ndx_to_keyroot_ndx[lmd_ndx]
+            keyroot = self.nodes[k_ndx]
+            dist_to_keyroot = 0
+            while keyroot is not n:
+                dist_to_keyroot += 1
+                keyroot = keyroot.children[0]
+            n.keyroot_node_index = k_ndx
+            n.dist_to_keyroot = dist_to_keyroot
 
-    def _check_keyroot_map(self):
-        # check
-        for k_idx in self.keyroots:
-            n_idx = k_idx
-            while n_idx is not None:
-                assert self.node_to_keyroot[n_idx] == k_idx
-                ch = self.get_children(self.nodes[n_idx])
-                if len(ch) > 0:
-                    n_idx = ch[0].nidx
-                else:
-                    n_idx = None
+        for i, k in enumerate(self.keyroot_indices):
+            keyroot = self.nodes[k]
+            keyroot.index_in_keyroot_list = i
+            node = keyroot
+            dist = 0
+            while node is not None:
+                dist += 1
+                node = node.children[0] if len(node.children) > 0 else None
+            keyroot.keyroot_path_length = dist
 
 
 
@@ -230,7 +227,6 @@ class ZSTreeDist (object):
 
         self.A, self.B = AnnotatedTree(A, get_children), AnnotatedTree(B, get_children)
         self.N_fingerprints = N_fingerprints
-        self.treedists = zeros((len(self.A.nodes), len(self.B.nodes)), int)
 
         self.update_cost = update_cost
 
@@ -256,8 +252,11 @@ class ZSTreeDist (object):
 
 
     def get(self, i, j):
-        k_i = self.A.node_to_keyroot[i]
-        k_j = self.B.node_to_keyroot[j]
+        Ai = self.A.nodes[i]
+        Bj = self.B.nodes[j]
+
+        k_i = Ai.keyroot_node_index
+        k_j = Bj.keyroot_node_index
 
         kn_i = self.A.nodes[k_i]
         kn_j = self.B.nodes[k_j]
@@ -265,24 +264,23 @@ class ZSTreeDist (object):
         fg_i = kn_i.fingerprint_index
         fg_j = kn_j.fingerprint_index
 
-        key = fg_i * self.N_fingerprints + fg_j
+        cache_index = fg_i * self.N_fingerprints + fg_j
 
-        entry = self._cache[key]
-        if entry is None:
-            self.forest_dist(k_i, k_j)
-            entry = k_i, k_j
-            self._cache[key] = entry
-            return self.treedists[i][j]
+        left_path_table = self._cache[cache_index]
+        if left_path_table is None:
+            P = kn_i.keyroot_path_length
+            Q = kn_j.keyroot_path_length
+            left_path_table = zeros((P, Q), int)
+            self._cache[cache_index] = left_path_table
+            self.forest_dist(left_path_table, k_i, k_j)
+            return left_path_table[0][0]
         else:
-            ck_i, ck_j = entry
-            u = k_i - ck_i
-            v = k_j - ck_j
-            return self.treedists[i-u][j-v]
+            p = Ai.dist_to_keyroot
+            q = Bj.dist_to_keyroot
+            return left_path_table[p][q]
 
 
-    def forest_dist(self, i, j):
-        Al = self.A.lmds
-        Bl = self.B.lmds
+    def forest_dist(self, left_path_table, i, j):
         An = self.A.nodes
         Bn = self.B.nodes
 
@@ -319,16 +317,16 @@ class ZSTreeDist (object):
         # For computing edit distance of two sequences of length `r` and `s` a distance matrix of
         # size (r+1, s+1) is required.
         # `m` and `n` are the dimensions of the forest distance matrix `fd`.
-        m = i - Al[i] + 2
-        n = j - Bl[j] + 2
+        m = i - An[i].left_most_descendant_index + 2
+        n = j - Bn[j].left_most_descendant_index + 2
 
         # indices into the distance matrix correspond to node_index+1
         # `ioff` and `joff` are the position of the left-most-leaf of the subtrees rooted at `i` and `j`.
         # They are effectively the offset of the local `i` <-> `j` forest distance matrix `fd` within the
         # global distance matrix `treedists`
         # Adding them to an index will transform from forest space to global space
-        ioff = Al[i] - 1
-        joff = Bl[j] - 1
+        ioff = An[i].left_most_descendant_index - 1
+        joff = Bn[j].left_most_descendant_index - 1
 
         if full_test_required:
             fd = zeros((m,n), int)
@@ -342,7 +340,8 @@ class ZSTreeDist (object):
                 for y in xrange(1, n):
                     # only need to check if x is an ancestor of i
                     # and y is an ancestor of j
-                    if Al[i] == Al[x+ioff] and Bl[j] == Bl[y+joff]:
+                    if An[i].left_most_descendant_index == An[x+ioff].left_most_descendant_index and \
+                                    Bn[j].left_most_descendant_index == Bn[y+joff].left_most_descendant_index:
                         #                   +-
                         #                   | δ(l(i1)..i-1, l(j1)..j) + γ(v → λ)
                         # δ(F1 , F2 ) = min-+ δ(l(i1)..i , l(j1)..j-1) + γ(λ → w)
@@ -353,7 +352,7 @@ class ZSTreeDist (object):
                             fd[x][y-1] + Bn[y+joff].weight,
                             fd[x-1][y-1] + self.update_cost(An[x+ioff], Bn[y+joff]),
                         )
-                        self.treedists[x+ioff][y+joff] = fd[x][y]
+                        left_path_table[An[x + ioff].dist_to_keyroot][Bn[y + joff].dist_to_keyroot] = fd[x][y]
                     else:
                         #                   +-
                         #                   | δ(l(i1)..i-1, l(j1)..j) + γ(v → λ)
@@ -366,8 +365,8 @@ class ZSTreeDist (object):
                         # `Al[x+ioff]` gets the index of the left most descendant of `x` in global space
                         # `Al[x+ioff] - 1` gets the index of the root node of the previous subtree to `x` in global space
                         # `Al[x+ioff]-1-off` transforms the index of the root of the previous subtree into forest space
-                        p = Al[x+ioff]-1-ioff
-                        q = Bl[y+joff]-1-joff
+                        p = An[x+ioff].left_most_descendant_index-1-ioff
+                        q = Bn[y+joff].left_most_descendant_index-1-joff
                         #print (p, q), (len(fd), len(fd[0]))
                         fd[x][y] = min(
                             fd[x-1][y] + An[x+ioff].weight,
@@ -387,15 +386,16 @@ class ZSTreeDist (object):
             # We can however save some array allocation costs by walking the tree
             nx = An[i]
             while nx is not None:
-                x = nx.nidx - ioff
+                x = nx.node_index - ioff
                 ny = Bn[j]
                 while ny is not None:
-                    y = ny.nidx - joff
+                    y = ny.node_index - joff
                     if nodes_matched:
                         cost = abs(x-y)
                     else:
                         cost = x + y
-                    self.treedists[nx.nidx][ny.nidx] = cost
+                    # self.treedists[nx.node_index][ny.node_index] = cost
+                    left_path_table[nx.dist_to_keyroot][ny.dist_to_keyroot] = cost
 
                     ny = ny.children[0] if len(ny.children) > 0 else None
 
