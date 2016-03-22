@@ -207,7 +207,7 @@ def compute_shape_fingerprints(A, B):
 
 
 def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix=False,
-         memo=False, fingerprint_matching=False, fingerprint_compaction=False):
+         memo=False, fingerprint_matching=False, fingerprint_compaction=False, repeats=1):
     conv = ASTConverter()
 
 
@@ -299,19 +299,28 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
 
 
     print ''
-    t1 = datetime.datetime.now()
-    if memo:
-        d = zs_memo.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
-                                    comparison_filter=comparison_permitted_by_label,
-                                    unique_match_constraints=unique_node_matches,
-                                    potential_match_fingerprints=potential_match_fingerprints)
-    else:
-        d = compare.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
-                                    comparison_filter=comparison_permitted_by_label,
-                                    unique_match_constraints=unique_node_matches,
-                                    potential_match_fingerprints=potential_match_fingerprints)
-    t2 = datetime.datetime.now()
-    print 'Distance={0}, took {1}'.format(d, t2-t1)
+    min_dt = None
+    max_dt = None
+    sum_dt = None
+    for i in xrange(repeats):
+        t1 = datetime.datetime.now()
+        if memo:
+            d = zs_memo.simple_distance(A_opt, B_opt, len(opt_fingerprints), simple_tree.Node.get_children, simple_tree.Node.get_label,
+                                        comparison_filter=comparison_permitted_by_label,
+                                        unique_match_constraints=unique_node_matches,
+                                        potential_match_fingerprints=potential_match_fingerprints)
+        else:
+            d = compare.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
+                                        comparison_filter=comparison_permitted_by_label,
+                                        unique_match_constraints=unique_node_matches,
+                                        potential_match_fingerprints=potential_match_fingerprints)
+        t2 = datetime.datetime.now()
+        dt = t2 - t1
+        min_dt = min(dt, min_dt) if min_dt is not None else dt
+        max_dt = max(dt, max_dt) if max_dt is not None else dt
+        sum_dt = sum_dt + dt if sum_dt is not None else dt
+
+    print 'Distance={0}, took min {1} max {2} avg {3}'.format(d, min_dt, max_dt, sum_dt / repeats)
 
 
 
@@ -335,6 +344,9 @@ def get_data(data):
     elif data == 'exb2':
         return SourceText.from_file(open('example_test_b_v1.py', 'r')),\
                SourceText.from_file(open('example_test_b_v3.py', 'r'))
+    elif data == 'exab':
+        return SourceText.from_file(open('example_test_v1.py', 'r')),\
+               SourceText.from_file(open('example_test_b_v2.py', 'r'))
     else:
         raise ValueError("Could not get example named {0}".format(data))
 
@@ -350,10 +362,11 @@ if __name__ == '__main__':
     parser.add_argument('--memo', action='store_true', help="Uses memoised Zhang-Shasha")
     parser.add_argument('--fg_match', action='store_true', help="Enable fingerprint matching")
     parser.add_argument('--fg_compact', action='store_true', help="Enable fingerprint compaction")
+    parser.add_argument('--repeats', type=int, default=1, help="number of repetitions")
     args = parser.parse_args()
 
     A_src, B_src = get_data(args.data)
 
     test(A_src, B_src, args.type_filter, args.flatten, args.common_ends, args.memo, args.fg_match,
-         args.fg_compact)
+         args.fg_compact, args.repeats)
 

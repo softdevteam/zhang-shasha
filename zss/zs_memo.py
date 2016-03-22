@@ -131,7 +131,7 @@ class AnnotatedTree(object):
 
 
 
-def simple_distance(A, B, get_children=Node.get_children,
+def simple_distance(A, B, N_fingerprints, get_children=Node.get_children,
                     get_label=Node.get_label, label_dist=strdist,
                     comparison_filter=None, unique_match_constraints=None,
                     potential_match_fingerprints=None):
@@ -175,7 +175,7 @@ def simple_distance(A, B, get_children=Node.get_children,
         else:
             return a.weight + b.weight
     z = ZSTreeDist(
-        A, B, get_children,
+        A, B, N_fingerprints, get_children,
         update_cost=update_cost,
         comparison_filter=comparison_filter,
         unique_match_constraints=unique_match_constraints,
@@ -216,7 +216,7 @@ class ZSTreeDist (object):
 
     :return: An integer distance [0, inf+)
     '''
-    def __init__(self, A, B, get_children, update_cost,
+    def __init__(self, A, B, N_fingerprints, get_children, update_cost,
                  comparison_filter=None, unique_match_constraints=None,
                  potential_match_fingerprints=None):
 
@@ -229,6 +229,7 @@ class ZSTreeDist (object):
         self.potential_match_fingerprints = potential_match_fingerprints
 
         self.A, self.B = AnnotatedTree(A, get_children), AnnotatedTree(B, get_children)
+        self.N_fingerprints = N_fingerprints
         self.treedists = zeros((len(self.A.nodes), len(self.B.nodes)), int)
 
         self.update_cost = update_cost
@@ -238,9 +239,7 @@ class ZSTreeDist (object):
         self.comparisons_filtered_out = 0
         self.comparisons_matched_out = 0
 
-        self.kr_done = zeros((len(self.A.keyroots), len(self.B.keyroots)), int)
-
-        self._cache = {}
+        self._cache = [None] * (N_fingerprints * N_fingerprints)
 
 
     def distance(self):
@@ -266,9 +265,9 @@ class ZSTreeDist (object):
         fg_i = kn_i.fingerprint_index
         fg_j = kn_j.fingerprint_index
 
-        key = fg_i, fg_j
+        key = fg_i * self.N_fingerprints + fg_j
 
-        entry = self._cache.get(key)
+        entry = self._cache[key]
         if entry is None:
             self.forest_dist(k_i, k_j)
             entry = k_i, k_j
@@ -286,13 +285,6 @@ class ZSTreeDist (object):
         Bl = self.B.lmds
         An = self.A.nodes
         Bn = self.B.nodes
-
-        kidx_i = self.A.node_to_keyroot[i]
-        kidx_j = self.B.node_to_keyroot[j]
-        kn_i = self.A.nodes[kidx_i]
-        kn_j = self.B.nodes[kidx_j]
-
-        self.kr_done[kn_i.kidx][kn_j.kidx] = 1
 
         Ai_fg = An[i].fingerprint_index
         Bj_fg = Bn[j].fingerprint_index
