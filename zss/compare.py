@@ -26,6 +26,7 @@ except ImportError:
             return 1
 
 from zss.simple_tree import Node
+from zss.match_list import MatchList
 
 
 class AnnotatedTree(object):
@@ -199,6 +200,7 @@ def distance(A, B, get_children, update_cost,
 
     A, B = AnnotatedTree(A, get_children), AnnotatedTree(B, get_children)
     treedists = zeros((len(A.nodes), len(B.nodes)), int)
+    treematches = [[None for _j in xrange(len(B.nodes))] for _i in xrange(len(A.nodes))]
 
     comparison_count = [0]
     filtered_comparison_count = [0]
@@ -258,6 +260,7 @@ def distance(A, B, get_children, update_cost,
 
         if full_test_required:
             fd = zeros((m,n), int)
+            fm = [[None for _j in xrange(n)] for _i in xrange(m)]
             for x in xrange(1, m): # δ(l(i1)..i, θ) = δ(l(1i)..1-1, θ) + γ(v → λ)
                 fd[x][0] = fd[x-1][0] + An[x+ioff].weight
             for y in xrange(1, n): # δ(θ, l(j1)..j) = δ(θ, l(j1)..j-1) + γ(λ → w)
@@ -274,12 +277,22 @@ def distance(A, B, get_children, update_cost,
                         # δ(F1 , F2 ) = min-+ δ(l(i1)..i , l(j1)..j-1) + γ(λ → w)
                         #                   | δ(l(i1)..i-1, l(j1)..j-1) + γ(v → w)
                         #                   +-
-                        fd[x][y] = min(
-                            fd[x-1][y] + An[x+ioff].weight,
-                            fd[x][y-1] + Bn[y+joff].weight,
-                            fd[x-1][y-1] + update_cost(An[x+ioff], Bn[y+joff]),
-                        )
-                        treedists[x+ioff][y+joff] = fd[x][y]
+                        del_cost = fd[x-1][y] + An[x+ioff].weight
+                        ins_cost = fd[x][y-1] + Bn[y+joff].weight
+                        upd_cost = fd[x-1][y-1] + update_cost(An[x+ioff], Bn[y+joff])
+                        cost = del_cost
+                        mat = fm[x-1][y]
+                        if ins_cost < cost:
+                            cost = ins_cost
+                            mat = fm[x][y-1]
+                        if upd_cost <= cost:
+                            cost = upd_cost
+                            mat = MatchList(x+ioff, y+joff, fm[x-1][y-1])
+                        fd[x][y] = cost
+                        fm[x][y] = mat
+
+                        treedists[x+ioff][y+joff] = cost
+                        treematches[x+ioff][y+joff] = mat
                     else:
                         #                   +-
                         #                   | δ(l(i1)..i-1, l(j1)..j) + γ(v → λ)
@@ -295,11 +308,23 @@ def distance(A, B, get_children, update_cost,
                         p = Al[x+ioff]-1-ioff
                         q = Bl[y+joff]-1-joff
                         #print (p, q), (len(fd), len(fd[0]))
-                        fd[x][y] = min(
-                            fd[x-1][y] + An[x+ioff].weight,
-                            fd[x][y-1] + Bn[y+joff].weight,
-                            fd[p][q] + treedists[x+ioff][y+joff]
-                        )
+                        subforest_xy_cost = treedists[x+ioff][y+joff]
+                        subforest_xy_matches = treematches[x+ioff][y+joff]
+                        del_cost = fd[x-1][y] + An[x+ioff].weight
+                        ins_cost = fd[x][y-1] + Bn[y+joff].weight
+                        upd_cost = fd[p][q] + subforest_xy_cost
+                        cost = del_cost
+                        mat = fm[x-1][y]
+                        if ins_cost < cost:
+                            cost = ins_cost
+                            mat = fm[x][y-1]
+                        if upd_cost <= cost:
+                            cost = upd_cost
+                            # The matches contained in `subforest_xy_matches` will be indices that are relative to
+                            # the left most descendant
+                            mat = MatchList.join(subforest_xy_matches, fm[p][q])
+                        fd[x][y] = cost
+                        fm[x][y] = mat
             comparison_count[0] += (m-1) * (n-1)
             filtered_comparison_count[0] += (m-1) * (n-1)
         else:
@@ -319,9 +344,14 @@ def distance(A, B, get_children, update_cost,
                     y = ny.node_index - joff
                     if nodes_matched:
                         cost = abs(x-y)
+                        mat = None
+                        for r in xrange(min(x,y)):
+                            mat = MatchList(r+1+ioff, r+1+joff, mat)
                     else:
                         cost = x + y
+                        mat = None
                     treedists[nx.node_index][ny.node_index] = cost
+                    treematches[nx.node_index][ny.node_index] = mat
 
                     ny = ny.children[0] if len(ny.children) > 0 else None
 
@@ -342,4 +372,4 @@ def distance(A, B, get_children, update_cost,
     print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
         filtered_comparison_count[0], comparison_count[0], comparisons_filtered_out[0], comparisons_matched_out[0])
 
-    return treedists[-1][-1]
+    return treedists[-1][-1], treematches[-1][-1]

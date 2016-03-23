@@ -1,6 +1,6 @@
 import datetime, collections, sys, argparse
 
-from zss import simple_tree, compare, zs_memo
+from zss import simple_tree, compare, zs_memo, match_list
 
 import parser, ast, _ast
 
@@ -9,7 +9,6 @@ import type_pruning
 from ast_to_simple_tree import ASTConverter
 from source_text import SourceText, Marker, longest_common_prefix, longest_common_suffix
 import tree_flattening
-
 
 
 codea1 = """
@@ -305,22 +304,24 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
     for i in xrange(repeats):
         t1 = datetime.datetime.now()
         if memo:
-            d = zs_memo.simple_distance(A_opt, B_opt, len(opt_fingerprints), simple_tree.Node.get_children, simple_tree.Node.get_label,
+            d, node_matches = zs_memo.simple_distance(A_opt, B_opt, len(opt_fingerprints), simple_tree.Node.get_children, simple_tree.Node.get_label,
                                         comparison_filter=comparison_permitted_by_label,
                                         unique_match_constraints=unique_node_matches,
                                         potential_match_fingerprints=potential_match_fingerprints)
+            node_matches = match_list.MatchList.as_match_list(node_matches)
         else:
-            d = compare.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
+            d, node_matches = compare.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
                                         comparison_filter=comparison_permitted_by_label,
                                         unique_match_constraints=unique_node_matches,
                                         potential_match_fingerprints=potential_match_fingerprints)
+            node_matches = match_list.MatchList.as_match_list(node_matches)
         t2 = datetime.datetime.now()
         dt = t2 - t1
         min_dt = min(dt, min_dt) if min_dt is not None else dt
         max_dt = max(dt, max_dt) if max_dt is not None else dt
         sum_dt = sum_dt + dt if sum_dt is not None else dt
 
-    print 'Distance={0}, took min {1} max {2} avg {3}'.format(d, min_dt, max_dt, sum_dt / repeats)
+    print 'Distance={0}, |node matches|={1}, took min {2} max {3} avg {4}'.format(d, len(node_matches), min_dt, max_dt, sum_dt / repeats)
 
 
 

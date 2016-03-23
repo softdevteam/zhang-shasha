@@ -26,6 +26,7 @@ except ImportError:
             return 1
 
 from zss.simple_tree import Node
+from zss.match_list import MatchList
 
 
 class AnnotatedTree(object):
@@ -243,12 +244,12 @@ class ZSTreeDist (object):
         #     for j in self.B.keyroots:
         #         self.forest_dist(i, j)
 
-        dist = self.get(len(self.A.nodes)-1, len(self.B.nodes)-1)
+        dist, mat = self.get(len(self.A.nodes)-1, len(self.B.nodes)-1)
 
         print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
             self.filtered_comparison_count, self.comparison_count, self.comparisons_filtered_out, self.comparisons_matched_out)
 
-        return dist
+        return dist, mat
 
 
     def get(self, i, j):
@@ -330,6 +331,7 @@ class ZSTreeDist (object):
 
         if full_test_required:
             fd = zeros((m,n), int)
+            fm = [[None for _j in xrange(n)] for _i in xrange(m)]
             for x in xrange(1, m): # δ(l(i1)..i, θ) = δ(l(1i)..1-1, θ) + γ(v → λ)
                 fd[x][0] = fd[x-1][0] + An[x+ioff].weight
             for y in xrange(1, n): # δ(θ, l(j1)..j) = δ(θ, l(j1)..j-1) + γ(λ → w)
@@ -347,12 +349,21 @@ class ZSTreeDist (object):
                         # δ(F1 , F2 ) = min-+ δ(l(i1)..i , l(j1)..j-1) + γ(λ → w)
                         #                   | δ(l(i1)..i-1, l(j1)..j-1) + γ(v → w)
                         #                   +-
-                        fd[x][y] = min(
-                            fd[x-1][y] + An[x+ioff].weight,
-                            fd[x][y-1] + Bn[y+joff].weight,
-                            fd[x-1][y-1] + self.update_cost(An[x+ioff], Bn[y+joff]),
-                        )
-                        left_path_table[An[x + ioff].dist_to_keyroot][Bn[y + joff].dist_to_keyroot] = fd[x][y]
+                        del_cost = fd[x-1][y] + An[x+ioff].weight
+                        ins_cost = fd[x][y-1] + Bn[y+joff].weight
+                        upd_cost = fd[x-1][y-1] + self.update_cost(An[x+ioff], Bn[y+joff])
+                        cost = del_cost
+                        mat = fm[x-1][y]
+                        if ins_cost < cost:
+                            cost = ins_cost
+                            mat = fm[x][y-1]
+                        if upd_cost <= cost:
+                            cost = upd_cost
+                            mat = MatchList(x-1, y-1, fm[x-1][y-1])
+                        fd[x][y] = cost
+                        fm[x][y] = mat
+
+                        left_path_table[An[x + ioff].dist_to_keyroot][Bn[y + joff].dist_to_keyroot] = cost, mat
                     else:
                         #                   +-
                         #                   | δ(l(i1)..i-1, l(j1)..j) + γ(v → λ)
@@ -362,17 +373,34 @@ class ZSTreeDist (object):
                         #                   +-
 
                         # `x+ioff` transforms x from forest space into global space,
-                        # `Al[x+ioff]` gets the index of the left most descendant of `x` in global space
-                        # `Al[x+ioff] - 1` gets the index of the root node of the previous subtree to `x` in global space
-                        # `Al[x+ioff]-1-off` transforms the index of the root of the previous subtree into forest space
+                        # `An[x+ioff].left_most_descendant_index` gets the index of the left most descendant of `x`
+                        # in global space
+                        # `An[x+ioff].left_most_descendant_index - 1` gets the index of the root node of the
+                        # previous subtree to `x` in global space
+                        # `An[x+ioff].left_most_descendant_index - 1 - ioff` transforms the index of the root of
+                        # the previous subtree into forest space
+                        # Therefore `p` is the index of the root of the previous subtree in forest space
                         p = An[x+ioff].left_most_descendant_index-1-ioff
                         q = Bn[y+joff].left_most_descendant_index-1-joff
                         #print (p, q), (len(fd), len(fd[0]))
-                        fd[x][y] = min(
-                            fd[x-1][y] + An[x+ioff].weight,
-                            fd[x][y-1] + Bn[y+joff].weight,
-                            fd[p][q] + self.get(x+ioff, y+joff)
-                        )
+                        subforest_xy_cost, subforest_xy_matches = self.get(x+ioff, y+joff)
+                        del_cost = fd[x-1][y] + An[x+ioff].weight
+                        ins_cost = fd[x][y-1] + Bn[y+joff].weight
+                        upd_cost = fd[p][q] + subforest_xy_cost
+                        cost = del_cost
+                        mat = fm[x-1][y]
+                        if ins_cost < cost:
+                            cost = ins_cost
+                            mat = fm[x][y-1]
+                        if upd_cost <= cost:
+                            cost = upd_cost
+                            # The matches contained in `subforest_xy_matches` will be indices that are relative to
+                            # the left most descendant
+                            if subforest_xy_matches is not None:
+                                subforest_xy_matches = subforest_xy_matches.offset(p, q)
+                            mat = MatchList.join(subforest_xy_matches, fm[p][q])
+                        fd[x][y] = cost
+                        fm[x][y] = mat
             self.comparison_count += (m-1) * (n-1)
             self.filtered_comparison_count += (m-1) * (n-1)
         else:
@@ -392,10 +420,14 @@ class ZSTreeDist (object):
                     y = ny.node_index - joff
                     if nodes_matched:
                         cost = abs(x-y)
+                        mat = None
+                        for i in xrange(min(x,y)):
+                            mat = MatchList(i, i, mat)
                     else:
                         cost = x + y
+                        mat = None
                     # self.treedists[nx.node_index][ny.node_index] = cost
-                    left_path_table[nx.dist_to_keyroot][ny.dist_to_keyroot] = cost
+                    left_path_table[nx.dist_to_keyroot][ny.dist_to_keyroot] = cost, mat
 
                     ny = ny.children[0] if len(ny.children) > 0 else None
 
