@@ -1,28 +1,32 @@
 
 
 class MatchList (object):
-    def __init__(self, node_a_index, node_b_index, prev_match=None):
-        self.node_a_index = node_a_index
-        self.node_b_index = node_b_index
+    def __init__(self, match_pairs, prev_match=None):
+        self.match_pairs = match_pairs
         self.prev_match = prev_match
 
 
-    def with_matcb(self, node_a_index, node_b_index):
-        return MatchList(node_a_index, node_b_index, self)
+    def __len__(self):
+        prev = 0
+        if self.prev_match is not None:
+            prev = len(self.prev_match)
+        return prev + len(self.match_pairs)
+
+
 
     def offset(self, u, v):
         if self.prev_match is not None:
             prev = self.prev_match.offset(u, v)
         else:
             prev = None
-        return MatchList(self.node_a_index + u, self.node_b_index + v, prev)
+        return MatchList([(a+u, b+v) for a, b in self.match_pairs], prev)
 
 
     def matches(self):
         matches = []
         node = self
         while node is not None:
-            matches.append((node.node_a_index, node.node_b_index))
+            matches.extend(node.match_pairs)
             node = node.prev_match
 
         sorted_matches = sorted(matches)
@@ -41,14 +45,15 @@ class MatchList (object):
             prev = self.prev_match.prepend(prefix)
         else:
             prev = prefix
-        return MatchList(self.node_a_index, self.node_b_index, prev)
+        return MatchList(self.match_pairs, prev)
 
     @staticmethod
-    def join(a, b):
-        if a is not None and b is not None:
-            return b.prepend(a)
-        else:
-            return a or b
+    def join(*xs):
+        y = None
+        for x in xs:
+            if x is not None:
+                y = x if y is None else x.prepend(y)
+        return y
 
     @staticmethod
     def as_match_list(x):

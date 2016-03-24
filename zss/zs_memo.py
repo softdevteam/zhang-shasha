@@ -359,7 +359,7 @@ class ZSTreeDist (object):
                             mat = fm[x][y-1]
                         if upd_cost <= cost:
                             cost = upd_cost
-                            mat = MatchList(x-1, y-1, fm[x-1][y-1])
+                            mat = MatchList([(x-1, y-1)], fm[x-1][y-1])
                         fd[x][y] = cost
                         fm[x][y] = mat
 
@@ -386,14 +386,14 @@ class ZSTreeDist (object):
                         subforest_xy_cost, subforest_xy_matches = self.get(x+ioff, y+joff)
                         del_cost = fd[x-1][y] + An[x+ioff].weight
                         ins_cost = fd[x][y-1] + Bn[y+joff].weight
-                        upd_cost = fd[p][q] + subforest_xy_cost
+                        join_cost = fd[p][q] + subforest_xy_cost
                         cost = del_cost
                         mat = fm[x-1][y]
                         if ins_cost < cost:
                             cost = ins_cost
                             mat = fm[x][y-1]
-                        if upd_cost <= cost:
-                            cost = upd_cost
+                        if join_cost <= cost:
+                            cost = join_cost
                             # The matches contained in `subforest_xy_matches` will be indices that are relative to
                             # the left most descendant
                             if subforest_xy_matches is not None:
@@ -420,9 +420,7 @@ class ZSTreeDist (object):
                     y = ny.node_index - joff
                     if nodes_matched:
                         cost = abs(x-y)
-                        mat = None
-                        for i in xrange(min(x,y)):
-                            mat = MatchList(i, i, mat)
+                        mat = MatchList([(r,r) for r in xrange(min(x,y))])
                     else:
                         cost = x + y
                         mat = None
