@@ -164,7 +164,6 @@ OP_UPD = 0x1
 OP_JOIN = 0x2
 OP_DEL = 0x4
 OP_INS = 0x8
-OP_WRITTEN_TO_TREE = 0x10
 
 
 def distance(A, B, get_children, update_cost,
@@ -207,14 +206,13 @@ def distance(A, B, get_children, update_cost,
 
     A, B = AnnotatedTree(A, get_children), AnnotatedTree(B, get_children)
     treedists = zeros((len(A.nodes), len(B.nodes)), int)
-    treematches = [[None for _j in xrange(len(B.nodes))] for _i in xrange(len(A.nodes))]
 
     comparison_count = [0]
     filtered_comparison_count = [0]
     comparisons_filtered_out = [0]
     comparisons_matched_out = [0]
 
-    def treedist(i, j):
+    def treedist(i, j, write_to_treedists, matches, subforests_for_matching):
         Al = A.lmds
         Bl = B.lmds
         An = A.nodes
@@ -267,53 +265,19 @@ def distance(A, B, get_children, update_cost,
 
         if full_test_required:
             fd = zeros((m,n), int)
-            fo = zeros((m,n), int)
+            if matches is not None:
+                fo = zeros((m,n), int)
+            else:
+                fo = None
+
             for x in xrange(1, m): # δ(l(i1)..i, θ) = δ(l(1i)..1-1, θ) + γ(v → λ)
                 fd[x][0] = fd[x-1][0] + An[x+ioff].weight
-                fo[x][0] = OP_DEL
+                if matches is not None:
+                    fo[x][0] = OP_DEL
             for y in xrange(1, n): # δ(θ, l(j1)..j) = δ(θ, l(j1)..j-1) + γ(λ → w)
                 fd[0][y] = fd[0][y-1] + Bn[y+joff].weight
-                fo[0][y] = OP_INS
-
-            def create_match_list(u, v):
-                match_pairs = []
-                prev_match_lists = []
-                u0, v0 = u, v
-                # debug = (u == len(A.nodes) and (v == len(B.nodes)))
-                debug = False
-                while u > 0 or v > 0:
-                    opcode = fo[u][v]
-                    if (opcode & OP_WRITTEN_TO_TREE) != 0 and (u0 != u or v0 != v):
-                        written = treematches[u+ioff][v+joff]
-                        if debug:
-                            print '{},{}: loading {} written at {},{} and adding {}'.format(u0+ioff, v0+joff, len(written), u+ioff, v+joff,
-                                                                                              len(match_pairs))
-                        prev_match_lists.append(written)
-                        return MatchList(match_pairs, MatchList.join(*prev_match_lists))
-                    elif opcode == OP_JOIN:
-                        subforest_uv_matches = treematches[u+ioff][v+joff]
-                        p = Al[u+ioff]-1-ioff
-                        q = Bl[v+joff]-1-joff
-                        if debug:
-                            print '{},{}: joining {} matches with {} matches from {},{}'.format(
-                                    u0+ioff, v0+joff,
-                                    len(match_pairs), len(subforest_uv_matches.match_pairs),
-                                    u+ioff, v+joff,
-                                )
-                        prev_match_lists.append(subforest_uv_matches)
-                        u = p
-                        v = q
-                    elif (opcode & OP_UPD) != 0:
-                        match_pairs.append((u+ioff, v+joff))
-                        u -= 1
-                        v -= 1
-                    elif (opcode & OP_DEL) != 0:
-                        u -= 1
-                    elif (opcode & OP_INS) != 0:
-                        v -= 1
-                    else:
-                        raise ValueError('Unknown op code {0}'.format(fo[u][v]))
-                return MatchList(match_pairs, MatchList.join(*prev_match_lists))
+                if matches is not None:
+                    fo[0][y] = OP_INS
 
             # `x` and `y` are indices into the forest distance matrix `fd`
             for x in xrange(1, m): ## the plus one is for the xrange impl
@@ -326,14 +290,15 @@ def distance(A, B, get_children, update_cost,
                         # δ(F1 , F2 ) = min-+ δ(l(i1)..i , l(j1)..j-1) + γ(λ → w)
                         #                   | δ(l(i1)..i-1, l(j1)..j-1) + γ(v → w)
                         #                   +-
-                        del_cost_op = fd[x-1][y] + An[x+ioff].weight, OP_DEL | OP_WRITTEN_TO_TREE
-                        ins_cost_op = fd[x][y-1] + Bn[y+joff].weight, OP_INS | OP_WRITTEN_TO_TREE
-                        upd_cost_op = fd[x-1][y-1] + update_cost(An[x+ioff], Bn[y+joff]), OP_UPD | OP_WRITTEN_TO_TREE
+                        del_cost_op = fd[x-1][y] + An[x+ioff].weight, OP_DEL
+                        ins_cost_op = fd[x][y-1] + Bn[y+joff].weight, OP_INS
+                        upd_cost_op = fd[x-1][y-1] + update_cost(An[x+ioff], Bn[y+joff]), OP_UPD
                         cost, op = min(upd_cost_op, del_cost_op, ins_cost_op)
                         fd[x][y] = cost
-                        fo[x][y] = op
-                        treedists[x+ioff][y+joff] = cost
-                        treematches[x+ioff][y+joff] = create_match_list(x, y)
+                        if matches is not None:
+                            fo[x][y] = op
+                        if write_to_treedists:
+                            treedists[x+ioff][y+joff] = cost
                         # print '{0},{1} full: written {2}'.format(x+ioff, y+joff, len(treematches[x+ioff][y+joff]))
                     else:
                         #                   +-
@@ -356,7 +321,30 @@ def distance(A, B, get_children, update_cost,
                         join_cost_op = fd[p][q] + subforest_xy_cost, OP_JOIN
                         cost, op = min(join_cost_op, del_cost_op, ins_cost_op)
                         fd[x][y] = cost
-                        fo[x][y] = op
+                        if matches is not None:
+                            fo[x][y] = op
+
+            if matches is not None:
+                u = m - 1
+                v = n - 1
+                while u > 0 or v > 0:
+                    opcode = fo[u][v]
+                    if opcode == OP_JOIN:
+                        subforests_for_matching.append((u+ioff, v+joff))
+                        u = Al[u+ioff]-1-ioff
+                        v = Bl[v+joff]-1-joff
+                    elif (opcode & OP_UPD) != 0:
+                        matches.append((u+ioff, v+joff))
+                        u -= 1
+                        v -= 1
+                    elif (opcode & OP_DEL) != 0:
+                        u -= 1
+                    elif (opcode & OP_INS) != 0:
+                        v -= 1
+                    else:
+                        raise ValueError('Unknown op code {0}'.format(fo[u][v]))
+
+
             comparison_count[0] += (m-1) * (n-1)
             filtered_comparison_count[0] += (m-1) * (n-1)
         else:
@@ -368,25 +356,26 @@ def distance(A, B, get_children, update_cost,
             # [x for x in xrange(1, m) if Al[x+ioff] == ll_i]
             #
             # We can however save some array allocation costs by walking the tree
-            nx = An[i]
-            while nx is not None:
-                x = nx.node_index - ioff
-                ny = Bn[j]
-                while ny is not None:
-                    y = ny.node_index - joff
-                    if nodes_matched:
-                        cost = abs(x-y)
-                        mat = MatchList([(r+1+ioff, r+1+joff) for r in xrange(min(x,y))])
-                    else:
-                        cost = x + y
-                        mat = None
-                    treedists[nx.node_index][ny.node_index] = cost
-                    # print '{0},{1} quick: written {2}'.format(nx.node_index, ny.node_index, len(mat))
-                    treematches[nx.node_index][ny.node_index] = mat
+            if write_to_treedists:
+                nx = An[i]
+                while nx is not None:
+                    x = nx.node_index - ioff
+                    ny = Bn[j]
+                    while ny is not None:
+                        y = ny.node_index - joff
+                        if nodes_matched:
+                            cost = abs(x-y)
+                        else:
+                            cost = x + y
+                        treedists[nx.node_index][ny.node_index] = cost
 
-                    ny = ny.children[0] if len(ny.children) > 0 else None
+                        ny = ny.children[0] if len(ny.children) > 0 else None
 
-                nx = nx.children[0] if len(nx.children) > 0 else None
+                    nx = nx.children[0] if len(nx.children) > 0 else None
+
+            if matches is not None:
+                for r in xrange(1, min(m, n)):
+                    matches.append((r+ioff, r+joff))
 
             saved = (m-1) * (n-1)
             comparison_count[0] += saved
@@ -396,11 +385,23 @@ def distance(A, B, get_children, update_cost,
                 comparisons_matched_out[0] += saved
 
 
+    matches = []
+    subforests_for_matching = []
     for i in A.keyroots:
         for j in B.keyroots:
-            treedist(i,j)
+            if i == A.keyroots[-1] and j == B.keyroots[-1]:
+                # Root node:
+                treedist(i, j, True, matches, subforests_for_matching)
+            else:
+                treedist(i, j, True, None, None)
+
+    while len(subforests_for_matching) > 0:
+        a, b = subforests_for_matching.pop()
+        treedist(a, b, False, matches, subforests_for_matching)
+
+
 
     print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
         filtered_comparison_count[0], comparison_count[0], comparisons_filtered_out[0], comparisons_matched_out[0])
 
-    return treedists[-1][-1], treematches[-1][-1]
+    return treedists[-1][-1], MatchList(matches, None)
