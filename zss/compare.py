@@ -408,3 +408,25 @@ def distance(A, B, get_children, update_cost,
         filtered_comparison_count[0], comparison_count[0], comparisons_filtered_out[0], comparisons_matched_out[0])
 
     return treedists[-1][-1], matches
+
+
+def check_match_list(matches):
+    match_set = set(matches)
+    if len(match_set) < len(matches):
+        raise RuntimeError('Duplicate match pairs detected')
+    a_set = set([m[0] for m in matches])
+    b_set = set([m[1] for m in matches])
+    if len(a_set) < len(matches):
+        raise RuntimeError('Node from tree A matched more than once')
+    if len(b_set) < len(matches):
+        raise RuntimeError('Node from tree B matched more than once')
+    #
+    # sorted_matches = sorted(matches)
+    # for i, pair in enumerate(sorted_matches):
+    #     # print pair
+    #     for ab in sorted_matches[:i]:
+    #         if ab == pair:
+    #             print 'Warning: match {0}->{1} appears more than once'.format(pair[0], pair[1])
+    #         if ab[0] == pair[0] and ab[1] != pair[1]:
+    #             print 'Error: match {0}->{1} conflicts with {2}->{3}'.format(pair[0], pair[1], ab[0], ab[1])
+

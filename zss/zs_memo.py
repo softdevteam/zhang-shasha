@@ -260,8 +260,8 @@ class ZSTreeDist (object):
             a, b = subforests_for_matching.pop()
             self.forest_dist(None, matches, subforests_for_matching, a, b)
 
-        print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
-            self.filtered_comparison_count, self.comparison_count, self.comparisons_filtered_out, self.comparisons_matched_out)
+        # print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
+        #     self.filtered_comparison_count, self.comparison_count, self.comparisons_filtered_out, self.comparisons_matched_out)
 
         return dist, matches
 

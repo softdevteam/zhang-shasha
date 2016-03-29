@@ -314,6 +314,7 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
                                         unique_match_constraints=unique_node_matches,
                                         potential_match_fingerprints=potential_match_fingerprints)
         t2 = datetime.datetime.now()
+        compare.check_match_list(node_matches)
         dt = t2 - t1
         min_dt = min(dt, min_dt) if min_dt is not None else dt
         max_dt = max(dt, max_dt) if max_dt is not None else dt
