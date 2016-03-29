@@ -1,6 +1,6 @@
 import datetime, collections, sys, argparse
 
-from zss import simple_tree, compare, zs_memo, match_list
+from zss import simple_tree, compare, zs_memo
 
 import parser, ast, _ast
 
@@ -308,13 +308,11 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
                                         comparison_filter=comparison_permitted_by_label,
                                         unique_match_constraints=unique_node_matches,
                                         potential_match_fingerprints=potential_match_fingerprints)
-            node_matches = match_list.MatchList.as_match_list(node_matches)
         else:
             d, node_matches = compare.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
                                         comparison_filter=comparison_permitted_by_label,
                                         unique_match_constraints=unique_node_matches,
                                         potential_match_fingerprints=potential_match_fingerprints)
-            node_matches = match_list.MatchList.as_match_list(node_matches)
         t2 = datetime.datetime.now()
         dt = t2 - t1
         min_dt = min(dt, min_dt) if min_dt is not None else dt

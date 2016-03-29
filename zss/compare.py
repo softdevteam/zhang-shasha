@@ -26,7 +26,6 @@ except ImportError:
             return 1
 
 from zss.simple_tree import Node
-from zss.match_list import MatchList
 
 
 class AnnotatedTree(object):
@@ -387,14 +386,18 @@ def distance(A, B, get_children, update_cost,
 
     matches = []
     subforests_for_matching = []
+    # Match keyroots with one another
     for i in A.keyroots:
         for j in B.keyroots:
             if i == A.keyroots[-1] and j == B.keyroots[-1]:
-                # Root node:
+                # Root node; this is the last pair of subforests so write to `treedists` and provide
+                # lists of matches and further subforests to fill in
                 treedist(i, j, True, matches, subforests_for_matching)
             else:
                 treedist(i, j, True, None, None)
 
+    # We redo some of our matching work here; just the subforests on the critical path, this time
+    # filling in the list of matches as we go
     while len(subforests_for_matching) > 0:
         a, b = subforests_for_matching.pop()
         treedist(a, b, False, matches, subforests_for_matching)
@@ -404,4 +407,4 @@ def distance(A, B, get_children, update_cost,
     print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
         filtered_comparison_count[0], comparison_count[0], comparisons_filtered_out[0], comparisons_matched_out[0])
 
-    return treedists[-1][-1], MatchList(matches, None)
+    return treedists[-1][-1], matches

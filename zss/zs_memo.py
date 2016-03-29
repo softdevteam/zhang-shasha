@@ -26,7 +26,6 @@ except ImportError:
             return 1
 
 from zss.simple_tree import Node
-from zss.match_list import MatchList
 
 
 class AnnotatedTree(object):
@@ -214,6 +213,12 @@ class ZSTreeDist (object):
 
     :return: An integer distance [0, inf+)
     '''
+    OP_UPD = 0x1
+    OP_JOIN = 0x2
+    OP_DEL = 0x4
+    OP_INS = 0x8
+
+
     def __init__(self, A, B, N_fingerprints, get_children, update_cost,
                  comparison_filter=None, unique_match_constraints=None,
                  potential_match_fingerprints=None):
@@ -244,15 +249,24 @@ class ZSTreeDist (object):
         #     for j in self.B.keyroots:
         #         self.forest_dist(i, j)
 
-        dist, mat = self.get(len(self.A.nodes)-1, len(self.B.nodes)-1)
+        matches = []
+        subforests_for_matching = []
+
+        dist = self.get(matches, subforests_for_matching, len(self.A.nodes)-1, len(self.B.nodes)-1)
+
+        # We redo some of our matching work here; just the subforests on the critical path, this time
+        # filling in the list of matches as we go
+        while len(subforests_for_matching) > 0:
+            a, b = subforests_for_matching.pop()
+            self.forest_dist(None, matches, subforests_for_matching, a, b)
 
         print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
             self.filtered_comparison_count, self.comparison_count, self.comparisons_filtered_out, self.comparisons_matched_out)
 
-        return dist, mat
+        return dist, matches
 
 
-    def get(self, i, j):
+    def get(self, matches, subforests_for_matching, i, j):
         Ai = self.A.nodes[i]
         Bj = self.B.nodes[j]
 
@@ -273,7 +287,7 @@ class ZSTreeDist (object):
             Q = kn_j.keyroot_path_length
             left_path_table = zeros((P, Q), int)
             self._cache[cache_index] = left_path_table
-            self.forest_dist(left_path_table, k_i, k_j)
+            self.forest_dist(left_path_table, matches, subforests_for_matching, k_i, k_j)
             return left_path_table[0][0]
         else:
             p = Ai.dist_to_keyroot
@@ -281,7 +295,7 @@ class ZSTreeDist (object):
             return left_path_table[p][q]
 
 
-    def forest_dist(self, left_path_table, i, j):
+    def forest_dist(self, left_path_table, matches, subforests_for_matching, i, j):
         An = self.A.nodes
         Bn = self.B.nodes
 
@@ -331,11 +345,18 @@ class ZSTreeDist (object):
 
         if full_test_required:
             fd = zeros((m,n), int)
-            fm = [[None for _j in xrange(n)] for _i in xrange(m)]
+            if matches is not None:
+                fo = zeros((m,n), int)
+            else:
+                fo = None
             for x in xrange(1, m): # δ(l(i1)..i, θ) = δ(l(1i)..1-1, θ) + γ(v → λ)
                 fd[x][0] = fd[x-1][0] + An[x+ioff].weight
+                if matches is not None:
+                    fo[x][0] = self.OP_DEL
             for y in xrange(1, n): # δ(θ, l(j1)..j) = δ(θ, l(j1)..j-1) + γ(λ → w)
                 fd[0][y] = fd[0][y-1] + Bn[y+joff].weight
+                if matches is not None:
+                    fo[0][y] = self.OP_INS
 
             # `x` and `y` are indices into the forest distance matrix `fd`
             for x in xrange(1, m): ## the plus one is for the xrange impl
@@ -349,21 +370,16 @@ class ZSTreeDist (object):
                         # δ(F1 , F2 ) = min-+ δ(l(i1)..i , l(j1)..j-1) + γ(λ → w)
                         #                   | δ(l(i1)..i-1, l(j1)..j-1) + γ(v → w)
                         #                   +-
-                        del_cost = fd[x-1][y] + An[x+ioff].weight
-                        ins_cost = fd[x][y-1] + Bn[y+joff].weight
-                        upd_cost = fd[x-1][y-1] + self.update_cost(An[x+ioff], Bn[y+joff])
-                        cost = del_cost
-                        mat = fm[x-1][y]
-                        if ins_cost < cost:
-                            cost = ins_cost
-                            mat = fm[x][y-1]
-                        if upd_cost <= cost:
-                            cost = upd_cost
-                            mat = MatchList([(x-1, y-1)], fm[x-1][y-1])
+                        del_cost_op = fd[x-1][y] + An[x+ioff].weight, self.OP_DEL
+                        ins_cost_op = fd[x][y-1] + Bn[y+joff].weight, self.OP_INS
+                        upd_cost_op = fd[x-1][y-1] + self.update_cost(An[x+ioff], Bn[y+joff]), self.OP_UPD
+                        cost, op = min(upd_cost_op, del_cost_op, ins_cost_op)
                         fd[x][y] = cost
-                        fm[x][y] = mat
 
-                        left_path_table[An[x + ioff].dist_to_keyroot][Bn[y + joff].dist_to_keyroot] = cost, mat
+                        if matches is not None:
+                            fo[x][y] = op
+                        if left_path_table is not None:
+                            left_path_table[An[x + ioff].dist_to_keyroot][Bn[y + joff].dist_to_keyroot] = cost
                     else:
                         #                   +-
                         #                   | δ(l(i1)..i-1, l(j1)..j) + γ(v → λ)
@@ -383,26 +399,36 @@ class ZSTreeDist (object):
                         p = An[x+ioff].left_most_descendant_index-1-ioff
                         q = Bn[y+joff].left_most_descendant_index-1-joff
                         #print (p, q), (len(fd), len(fd[0]))
-                        subforest_xy_cost, subforest_xy_matches = self.get(x+ioff, y+joff)
-                        del_cost = fd[x-1][y] + An[x+ioff].weight
-                        ins_cost = fd[x][y-1] + Bn[y+joff].weight
-                        join_cost = fd[p][q] + subforest_xy_cost
-                        cost = del_cost
-                        mat = fm[x-1][y]
-                        if ins_cost < cost:
-                            cost = ins_cost
-                            mat = fm[x][y-1]
-                        if join_cost <= cost:
-                            cost = join_cost
-                            # The matches contained in `subforest_xy_matches` will be indices that are relative to
-                            # the left most descendant
-                            if subforest_xy_matches is not None:
-                                subforest_xy_matches = subforest_xy_matches.offset(p, q)
-                            mat = MatchList.join(subforest_xy_matches, fm[p][q])
+                        subforest_xy_cost = self.get(None, None, x+ioff, y+joff)
+                        del_cost_op = fd[x-1][y] + An[x+ioff].weight, self.OP_DEL
+                        ins_cost_op = fd[x][y-1] + Bn[y+joff].weight, self.OP_INS
+                        join_cost_op = fd[p][q] + subforest_xy_cost, self.OP_JOIN
+                        cost, op = min(join_cost_op, del_cost_op, ins_cost_op)
                         fd[x][y] = cost
-                        fm[x][y] = mat
+                        if matches is not None:
+                            fo[x][y] = op
             self.comparison_count += (m-1) * (n-1)
             self.filtered_comparison_count += (m-1) * (n-1)
+
+            if matches is not None:
+                u = m - 1
+                v = n - 1
+                while u > 0 or v > 0:
+                    opcode = fo[u][v]
+                    if opcode == self.OP_JOIN:
+                        subforests_for_matching.append((u+ioff, v+joff))
+                        u = An[u+ioff].left_most_descendant_index - 1 - ioff
+                        v = Bn[v+joff].left_most_descendant_index - 1 - joff
+                    elif (opcode & self.OP_UPD) != 0:
+                        matches.append((u+ioff, v+joff))
+                        u -= 1
+                        v -= 1
+                    elif (opcode & self.OP_DEL) != 0:
+                        u -= 1
+                    elif (opcode & self.OP_INS) != 0:
+                        v -= 1
+                    else:
+                        raise ValueError('Unknown op code {0}'.format(fo[u][v]))
         else:
             # Using the normal code above as reference, we can see that
             # we only write the treedist array for nodes that are on the left-most path
@@ -412,24 +438,27 @@ class ZSTreeDist (object):
             # [x for x in xrange(1, m) if Al[x+ioff] == ll_i]
             #
             # We can however save some array allocation costs by walking the tree
-            nx = An[i]
-            while nx is not None:
-                x = nx.node_index - ioff
-                ny = Bn[j]
-                while ny is not None:
-                    y = ny.node_index - joff
-                    if nodes_matched:
-                        cost = abs(x-y)
-                        mat = MatchList([(r,r) for r in xrange(min(x,y))])
-                    else:
-                        cost = x + y
-                        mat = None
-                    # self.treedists[nx.node_index][ny.node_index] = cost
-                    left_path_table[nx.dist_to_keyroot][ny.dist_to_keyroot] = cost, mat
+            if left_path_table is not None:
+                nx = An[i]
+                while nx is not None:
+                    x = nx.node_index - ioff
+                    ny = Bn[j]
+                    while ny is not None:
+                        y = ny.node_index - joff
+                        if nodes_matched:
+                            cost = abs(x-y)
+                        else:
+                            cost = x + y
+                        # self.treedists[nx.node_index][ny.node_index] = cost
+                        left_path_table[nx.dist_to_keyroot][ny.dist_to_keyroot] = cost
 
-                    ny = ny.children[0] if len(ny.children) > 0 else None
+                        ny = ny.children[0] if len(ny.children) > 0 else None
 
-                nx = nx.children[0] if len(nx.children) > 0 else None
+                    nx = nx.children[0] if len(nx.children) > 0 else None
+
+            if matches is not None:
+                for r in xrange(1, min(m, n)):
+                    matches.append((r+ioff, r+joff))
 
             saved = (m-1) * (n-1)
             self.comparison_count += saved
