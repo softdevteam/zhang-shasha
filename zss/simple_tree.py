@@ -31,6 +31,7 @@ class Node(object):
         self.__sha = None
         self.__content_sha = None
         self.__fingerprint_index = None
+        self.__content_fingerprint_index = None
         self.__depth = None
         self.__subtree_size = None
         self.__original_node = original_node
@@ -98,7 +99,7 @@ class Node(object):
         return self.__sha
 
     @property
-    def sha_content(self):
+    def content_sha(self):
         if self.__content_sha is None:
             if self.__original_node is None:
                 hasher = hashlib.sha256()
@@ -106,7 +107,7 @@ class Node(object):
                 hasher.update(s)
                 self.__content_sha = binascii.hexlify(hasher.digest())
             else:
-                self.__content_sha = self.__original_node.sha_content
+                self.__content_sha = self.__original_node.content_sha
         return self.__content_sha
 
     @property
@@ -127,17 +128,31 @@ class Node(object):
             raise ValueError('Fingerprint not computed for node {0}'.format(id(self)))
         return self.__fingerprint_index
 
+    @property
+    def content_fingerprint_index(self):
+        if self.__content_fingerprint_index is None:
+            raise ValueError('Fingerprint not computed for node {0}'.format(id(self)))
+        return self.__content_fingerprint_index
+
     def build_sha_table(self, sha_to_nodes):
         for child in self.children:
             child.build_sha_table(sha_to_nodes)
         nodes = sha_to_nodes.setdefault(self.sha, list())
         nodes.append(self)
 
-    def update_fingerprint_index(self, sha_to_index, sha_indices_to_nodes):
+    def update_fingerprint_index(self, sha_to_index, sha_indices_to_nodes, nodes_to_ignore=None):
         for child in self.children:
             child.update_fingerprint_index(sha_to_index, sha_indices_to_nodes)
-        self.__fingerprint_index = sha_to_index.setdefault(self.sha, len(sha_to_index))
-        nodes_for_index = sha_indices_to_nodes.setdefault(self.__fingerprint_index, list())
+        if nodes_to_ignore is None or self not in nodes_to_ignore:
+            self.__fingerprint_index = sha_to_index.setdefault(self.sha, len(sha_to_index))
+            nodes_for_index = sha_indices_to_nodes.setdefault(self.__fingerprint_index, list())
+            nodes_for_index.append(self)
+
+    def update_content_fingerprint_index(self, sha_to_index, sha_indices_to_nodes):
+        for child in self.children:
+            child.update_content_fingerprint_index(sha_to_index, sha_indices_to_nodes)
+        self.__content_fingerprint_index = sha_to_index.setdefault(self.content_sha, len(sha_to_index))
+        nodes_for_index = sha_indices_to_nodes.setdefault(self.__content_fingerprint_index, list())
         nodes_for_index.append(self)
 
     def all_nodes(self, node_list):

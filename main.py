@@ -307,12 +307,12 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
             d, node_matches = zs_memo.simple_distance(A_opt, B_opt, len(opt_fingerprints), simple_tree.Node.get_children, simple_tree.Node.get_label,
                                         comparison_filter=comparison_permitted_by_label,
                                         unique_match_constraints=unique_node_matches,
-                                        potential_match_fingerprints=potential_match_fingerprints)
+                                        potential_match_fingerprints=potential_match_fingerprints, verbose=True)
         else:
             d, node_matches = compare.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
                                         comparison_filter=comparison_permitted_by_label,
                                         unique_match_constraints=unique_node_matches,
-                                        potential_match_fingerprints=potential_match_fingerprints)
+                                        potential_match_fingerprints=potential_match_fingerprints, verbose=True)
         t2 = datetime.datetime.now()
         compare.check_match_list(node_matches)
         dt = t2 - t1

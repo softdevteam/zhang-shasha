@@ -131,7 +131,7 @@ class AnnotatedTree(object):
 def simple_distance(A, B, N_fingerprints, get_children=Node.get_children,
                     get_label=Node.get_label, label_dist=strdist,
                     comparison_filter=None, unique_match_constraints=None,
-                    potential_match_fingerprints=None):
+                    potential_match_fingerprints=None, verbose=False):
     """Computes the exact tree edit distance between trees A and B.
 
     Use this function if both of these things are true:
@@ -178,7 +178,7 @@ def simple_distance(A, B, N_fingerprints, get_children=Node.get_children,
         unique_match_constraints=unique_match_constraints,
         potential_match_fingerprints=potential_match_fingerprints,
     )
-    return z.distance()
+    return z.distance(verbose=verbose)
 
 
 
@@ -244,7 +244,7 @@ class ZSTreeDist (object):
         self._cache = [None] * (N_fingerprints * N_fingerprints)
 
 
-    def distance(self):
+    def distance(self, verbose=False):
         # for i in self.A.keyroots:
         #     for j in self.B.keyroots:
         #         self.forest_dist(i, j)
@@ -260,8 +260,9 @@ class ZSTreeDist (object):
             a, b = subforests_for_matching.pop()
             self.forest_dist(None, matches, subforests_for_matching, a, b)
 
-        # print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
-        #     self.filtered_comparison_count, self.comparison_count, self.comparisons_filtered_out, self.comparisons_matched_out)
+        if verbose:
+            print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
+                self.filtered_comparison_count, self.comparison_count, self.comparisons_filtered_out, self.comparisons_matched_out)
 
         return dist, matches
 
