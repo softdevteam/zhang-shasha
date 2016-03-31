@@ -24,7 +24,7 @@ class Node(object):
             .addkid(Node("e"))
     """
 
-    def __init__(self, label, value='', children=None, start=None, end=None, weight=1, original_node=None):
+    def __init__(self, label, value='', children=None, start=None, end=None, weight=1, compacted_from=None):
         self.label = label
         self.value = value
         self.children = children or list()
@@ -34,7 +34,7 @@ class Node(object):
         self.__content_fingerprint_index = None
         self.__depth = None
         self.__subtree_size = None
-        self.__original_node = original_node
+        self.__compacted_from = compacted_from
         self.start = start
         self.end = end
         self.weight = weight
@@ -89,25 +89,21 @@ class Node(object):
     @property
     def sha(self):
         if self.__sha is None:
-            if self.__original_node is None:
-                hasher = hashlib.sha256()
-                s = '{0}({1})'.format(self.label, ','.join(child.sha for child in self.children))
-                hasher.update(s)
-                self.__sha = binascii.hexlify(hasher.digest())
-            else:
-                self.__sha = self.__original_node.sha
+            cpt = '<{}>'.format(self.__compacted_from.sha) if self.__compacted_from is not None else ''
+            hasher = hashlib.sha256()
+            s = '{}{}({})'.format(self.label, cpt, ','.join(child.sha for child in self.children))
+            hasher.update(s)
+            self.__sha = binascii.hexlify(hasher.digest())
         return self.__sha
 
     @property
     def content_sha(self):
         if self.__content_sha is None:
-            if self.__original_node is None:
-                hasher = hashlib.sha256()
-                s = '{0}[{1}]({2})'.format(self.label, self.value, ','.join(child.sha for child in self.children))
-                hasher.update(s)
-                self.__content_sha = binascii.hexlify(hasher.digest())
-            else:
-                self.__content_sha = self.__original_node.content_sha
+            cpt = '<{}>'.format(self.__compacted_from.content_sha) if self.__compacted_from is not None else ''
+            hasher = hashlib.sha256()
+            s = '{}[{}]{}({})'.format(self.label, self.value, cpt, ','.join(child.sha for child in self.children))
+            hasher.update(s)
+            self.__content_sha = binascii.hexlify(hasher.digest())
         return self.__content_sha
 
     @property
@@ -142,7 +138,7 @@ class Node(object):
 
     def update_fingerprint_index(self, sha_to_index, sha_indices_to_nodes, nodes_to_ignore=None):
         for child in self.children:
-            child.update_fingerprint_index(sha_to_index, sha_indices_to_nodes)
+            child.update_fingerprint_index(sha_to_index, sha_indices_to_nodes, nodes_to_ignore=nodes_to_ignore)
         if nodes_to_ignore is None or self not in nodes_to_ignore:
             self.__fingerprint_index = sha_to_index.setdefault(self.sha, len(sha_to_index))
             nodes_for_index = sha_indices_to_nodes.setdefault(self.__fingerprint_index, list())
@@ -236,12 +232,16 @@ class Node(object):
     def compact(self, nodes_to_compact):
         if self in nodes_to_compact:
             return Node(label=self.label, value=self.value, children=[],
-                        start=self.start, end=self.end, weight=self.subtree_size, original_node=self)
+                        start=self.start, end=self.end, weight=self.subtree_size, compacted_from=self)
         else:
             return Node(label=self.label, value=self.value, children=[c.compact(nodes_to_compact) for c in self.children],
-                        start=self.start, end=self.end, original_node=self)
+                        start=self.start, end=self.end, compacted_from=self.__compacted_from)
 
 
+    def update_node_list(self, node_list):
+        for ch in self.children:
+            ch.update_node_list(node_list)
+        node_list.append(self)
 
 
     def _flatten_retained(self, flatten_pred_fn):
@@ -259,6 +259,26 @@ class Node(object):
     def flatten(self, flatten_pred_fn):
         return self._flatten_retained(flatten_pred_fn)
 
+
+    def content_compare(self, b):
+        if not isinstance(b, Node):
+            raise TypeError, "Must compare against type Node"
+        if self.label != b.label or self.value != b.value or len(self.children) != len(b.children):
+            return False
+        for x, y in zip(self.children, b.children):
+            if not x.content_compare(y):
+                return False
+        return True
+
+    def shape_compare(self, b):
+        if not isinstance(b, Node):
+            raise TypeError, "Must compare against type Node"
+        if self.label != b.label or len(self.children) != len(b.children):
+            return False
+        for x, y in zip(self.children, b.children):
+            if not x.shape_compare(y):
+                return False
+        return True
 
     def __contains__(self, b):
         if isinstance(b, str) and self.label == b: return 1

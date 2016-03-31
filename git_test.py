@@ -57,19 +57,21 @@ def tree_diff(A_src, B_src, verbose=False):
 
 
     base_content_fingerprints = set()
-    # A_nodes_to_collapse = set()
-    # B_nodes_to_collapse = set()
-    #
-    # base_content_fingerprints, A_nodes_by_content_index, B_nodes_by_content_index = compute_content_fingerprints(A_opt, B_opt)
-    # for A_fg_index, A_nodes in A_nodes_by_content_index.items():
-    #     B_nodes = B_nodes_by_content_index.get(A_fg_index)
-    #     if B_nodes is not None:
-    #         if len(A_nodes) == len(B_nodes):
-    #             A_nodes_to_collapse = A_nodes_to_collapse.union(A_nodes)
-    #             B_nodes_to_collapse = B_nodes_to_collapse.union(B_nodes)
-    #
-    # A_opt = A_opt.compact(A_nodes_to_collapse)
-    # B_opt = B_opt.compact(B_nodes_to_collapse)
+    base_fingerprints = set()
+    A_nodes_to_collapse = set()
+    B_nodes_to_collapse = set()
+
+    base_content_fingerprints, A_nodes_by_content_index, B_nodes_by_content_index = compute_content_fingerprints(A_opt, B_opt)
+    for A_fg_index, A_nodes in A_nodes_by_content_index.items():
+        B_nodes = B_nodes_by_content_index.get(A_fg_index)
+        if B_nodes is not None:
+            if len(A_nodes) == len(B_nodes):
+                A_nodes_to_collapse = A_nodes_to_collapse.union(A_nodes)
+                B_nodes_to_collapse = B_nodes_to_collapse.union(B_nodes)
+
+    A_opt = A_opt.compact(A_nodes_to_collapse)
+    B_opt = B_opt.compact(B_nodes_to_collapse)
+
 
 
     A_nodes_to_collapse = set()
