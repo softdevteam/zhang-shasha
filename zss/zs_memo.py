@@ -264,7 +264,9 @@ class ZSTreeDist (object):
             print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
                 self.filtered_comparison_count, self.comparison_count, self.comparisons_filtered_out, self.comparisons_matched_out)
 
-        return dist, matches
+        node_matches = [(self.A.nodes[i], self.B.nodes[j]) for i, j in matches]
+
+        return dist, node_matches
 
 
     def get(self, matches, subforests_for_matching, i, j):

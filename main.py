@@ -1,6 +1,6 @@
 import datetime, collections, sys, argparse
 
-from zss import simple_tree, compare, zs_memo
+from zss import simple_tree, compare, zs_memo, fgcompact, edit_script
 
 import parser, ast, _ast
 
@@ -309,7 +309,7 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
                                         unique_match_constraints=unique_node_matches,
                                         potential_match_fingerprints=potential_match_fingerprints, verbose=True)
         else:
-            d, node_matches = compare.simple_distance(A_opt, B_opt, simple_tree.Node.get_children, simple_tree.Node.get_label,
+            d, node_matches = compare.simple_distance(A_opt, B_opt, len(opt_fingerprints), simple_tree.Node.get_children, simple_tree.Node.get_label,
                                         comparison_filter=comparison_permitted_by_label,
                                         unique_match_constraints=unique_node_matches,
                                         potential_match_fingerprints=potential_match_fingerprints, verbose=True)
@@ -320,7 +320,24 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
         max_dt = max(dt, max_dt) if max_dt is not None else dt
         sum_dt = sum_dt + dt if sum_dt is not None else dt
 
-    print 'Distance={0}, |node matches|={1}, took min {2} max {3} avg {4}'.format(d, len(node_matches), min_dt, max_dt, sum_dt / repeats)
+    node_matches_full = fgcompact.compacted_match_list_to_node_list(node_matches)
+
+
+    diffs = edit_script.edit_script(A, B, node_matches_full)
+    X = A.clone()
+    A_ids = {a.merge_id for a in A.iter()}
+    X_ids = {x.merge_id for x in X.iter()}
+    assert A_ids == X_ids
+    merge_id_to_node = {}
+    for node in X.iter():
+        merge_id_to_node[node.merge_id] = node
+    for diff in diffs:
+        diff.apply(merge_id_to_node)
+
+    assert X == B
+
+    print 'Distance={}, |node matches|={}, |full_matches|={}, |diffs|={}, took min {} max {} avg {}'.format(d, len(node_matches), len(node_matches_full), len(diffs), min_dt, max_dt, sum_dt / repeats)
+
 
 
 

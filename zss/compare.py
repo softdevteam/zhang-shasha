@@ -107,7 +107,7 @@ class AnnotatedTree(object):
         self.keyroots = sorted(keyroots.values())
 
 
-def simple_distance(A, B, get_children=Node.get_children,
+def simple_distance(A, B, N_fingerprints, get_children=Node.get_children,
                     get_label=Node.get_label, label_dist=strdist,
                     comparison_filter=None, unique_match_constraints=None,
                     potential_match_fingerprints=None, verbose=False):
@@ -408,7 +408,9 @@ def distance(A, B, get_children, update_cost,
         print 'ZS performed {0}/{1} comparisons; {2} saved by filtering, {3} saved by matching'.format(
             filtered_comparison_count[0], comparison_count[0], comparisons_filtered_out[0], comparisons_matched_out[0])
 
-    return treedists[-1][-1], matches
+    node_matches = [(A.nodes[i], B.nodes[j]) for i, j in matches]
+
+    return treedists[-1][-1], node_matches
 
 
 def check_match_list(matches):

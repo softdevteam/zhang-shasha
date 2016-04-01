@@ -24,17 +24,22 @@ class Node(object):
             .addkid(Node("e"))
     """
 
-    def __init__(self, label, value='', children=None, start=None, end=None, weight=1, compacted_from=None):
+    def __init__(self, label, value='', children=None, start=None, end=None, weight=1, original_node=None, compacted=False,
+                 merge_id=None):
         self.label = label
         self.value = value
+        self.parent = None
         self.children = children or list()
+        for child in self.children:
+            child.parent = self
         self.__sha = None
         self.__content_sha = None
         self.__fingerprint_index = None
         self.__content_fingerprint_index = None
         self.__depth = None
         self.__subtree_size = None
-        self.__compacted_from = compacted_from
+        self.original_node = original_node
+        self.compacted = compacted
         self.start = start
         self.end = end
         self.weight = weight
@@ -44,6 +49,7 @@ class Node(object):
         self.keyroot_path_length = -1
         self.index_in_keyroot_list = -1
         self.dist_to_keyroot = -1
+        self.merge_id = merge_id
 
     @staticmethod
     def get_children(node):
@@ -69,6 +75,18 @@ class Node(object):
         """
         if before:  self.children.insert(0, node)
         else:   self.children.append(node)
+        node.parent = self
+        return self
+
+    def insert_child(self, pos, node):
+        """
+        Add a child at a specified position
+        :param pos: position at which to insert child
+        :param node: child node
+        :return: self
+        """
+        self.children.insert(pos, node)
+        node.parent = self
         return self
 
     def get(self, label):
@@ -89,7 +107,7 @@ class Node(object):
     @property
     def sha(self):
         if self.__sha is None:
-            cpt = '<{}>'.format(self.__compacted_from.sha) if self.__compacted_from is not None else ''
+            cpt = '<{}>'.format(self.original_node.sha) if self.compacted  else ''
             hasher = hashlib.sha256()
             s = '{}{}({})'.format(self.label, cpt, ','.join(child.sha for child in self.children))
             hasher.update(s)
@@ -99,7 +117,7 @@ class Node(object):
     @property
     def content_sha(self):
         if self.__content_sha is None:
-            cpt = '<{}>'.format(self.__compacted_from.content_sha) if self.__compacted_from is not None else ''
+            cpt = '<{}>'.format(self.original_node.content_sha) if self.compacted  else ''
             hasher = hashlib.sha256()
             s = '{}[{}]{}({})'.format(self.label, self.value, cpt, ','.join(child.sha for child in self.children))
             hasher.update(s)
@@ -230,12 +248,21 @@ class Node(object):
         return Node(label=self.label, children=children, start=self.start, end=self.end)
 
     def compact(self, nodes_to_compact):
+        original_node = self.original_node if self.original_node is not None else self
         if self in nodes_to_compact:
             return Node(label=self.label, value=self.value, children=[],
-                        start=self.start, end=self.end, weight=self.subtree_size, compacted_from=self)
+                        start=self.start, end=self.end, weight=self.subtree_size, original_node=original_node, compacted=True,
+                        merge_id=self.merge_id)
         else:
             return Node(label=self.label, value=self.value, children=[c.compact(nodes_to_compact) for c in self.children],
-                        start=self.start, end=self.end, compacted_from=self.__compacted_from)
+                        start=self.start, end=self.end, original_node=original_node, compacted=self.compacted,
+                        merge_id=self.merge_id)
+
+    def clone(self):
+        original_node = self.original_node if self.original_node is not None else self
+        return Node(label=self.label, value=self.value, children=[c.clone() for c in self.children],
+                    start=self.start, end=self.end, original_node=original_node, compacted=self.compacted,
+                    merge_id=self.merge_id)
 
 
     def update_node_list(self, node_list):
