@@ -1,7 +1,7 @@
 import ast
 
-from zss import simple_tree
-import source_text
+from zss import simple_tree, source_text
+
 
 def tuple_to_tree(x):
     label = x[0]
@@ -55,7 +55,7 @@ class ASTConverter (object):
             self._handle_ast_value(src_text, children, values, field_val)
         node_class = self._get_node_class(ast_node)
         value = '_'.join([str(x) for x in values])
-        children.sort(key=lambda x: x.start)
+
         return node_class.node(value, children, start=self._ast_node_marker(src_text, ast_node))
 
     def parse(self, code):
@@ -65,6 +65,7 @@ class ASTConverter (object):
         t = self._ast_to_tree(code, a)
         t.fix_markers_bottom_up()
         t.fix_markers_top_down(code.marker_at_start(), code.marker_at_end())
+        t.check_markers()
         return t
 
     def node_classes(self):

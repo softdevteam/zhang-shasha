@@ -1,23 +1,16 @@
-import sys, os
+import argparse
+import os
+import parser
+import subprocess
+import sys
+import tempfile
+import time
+
 import pygit2
 
-import tempfile
-
-import subprocess
-
-
-
-import time, collections, sys, argparse
-
-from zss import simple_tree, compare, zs_memo, tree_match, edit_script
-
-import parser, ast, _ast
-
-import type_pruning
-
 from ast_to_simple_tree import ASTConverter
-from source_text import SourceText, Marker, longest_common_prefix, longest_common_suffix
-import tree_flattening
+from zss import compare, zs_memo, tree_match, edit_script
+from zss.source_text import SourceText, longest_common_prefix, longest_common_suffix
 
 
 def tree_diff(A_src, B_src, verbose=False):

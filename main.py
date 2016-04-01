@@ -1,15 +1,12 @@
-import datetime, collections, sys, argparse
+import _ast
+import argparse
+import parser
 
-from zss import simple_tree, compare, zs_memo, fgcompact, edit_script
-
-import parser, ast, _ast
-
-import type_pruning
+import datetime
 
 from ast_to_simple_tree import ASTConverter
-from source_text import SourceText, Marker, longest_common_prefix, longest_common_suffix
-import tree_flattening
-
+from zss import simple_tree, compare, zs_memo, fgcompact, edit_script, type_pruning, tree_flattening, render_diff
+from zss.source_text import SourceText, longest_common_prefix, longest_common_suffix
 
 codea1 = """
 def gauss(x, a, b, c):
@@ -206,7 +203,7 @@ def compute_shape_fingerprints(A, B):
 
 
 def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix=False,
-         memo=False, fingerprint_matching=False, fingerprint_compaction=False, repeats=1):
+         memo=False, fingerprint_matching=False, fingerprint_compaction=False, repeats=1, html_render=False):
     conv = ASTConverter()
 
 
@@ -279,22 +276,23 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
     opt_fingerprints, A_nodes_by_index, B_nodes_by_index = compute_shape_fingerprints(A_opt, B_opt)
 
 
-    print 'SOURCE CODE STATS: |A_src|={0}, |B_src|={1}, |A_src.lines|={2}, |B_src.lines|={3}, ' \
-          '|common prefix lines|={4}, |common suffix lines|={5}'.format(
-        len(A_src), len(B_src), len(A_src.lines), len(B_src.lines), longest_common_prefix(A_src.lines, B_src.lines),
-        longest_common_suffix(A_src.lines, B_src.lines))
-    print 'BASE CASE TREE STATS: |A|={0}, |B|={1}, A.height={2}, B.height={3}, |shape_fingerprints(A, B)|={4}'.format(
-        len([x for x in A.iter()]), len([x for x in B.iter()]),
-        A.depth, B.depth, len(base_fingerprints))
-    print 'OPTIMISED TREE STATS: |A_opt|={0}, |B_opt|={1}, A_opt.height={2}, B_opt.height={3}, ' \
-        '|shape_fingerprints(A_opt, B_opt)|={4}'.format(
-        len([x for x in A_opt.iter()]), len([x for x in B_opt.iter()]),
-        A_opt.depth, B_opt.depth, len(opt_fingerprints))
-    if unique_node_matches is not None:
-        print '|unique fingerprint matches|={0}, |potential match fgs|={1}, ' \
-              '|potential matches in A|={2}, |potential matches in B|={3}'.format(
-                    len(unique_node_matches), len(potential_match_fingerprints),
-                    num_potentially_matching_nodes_A, num_potentially_matching_nodes_B)
+    if not html_render:
+        print 'SOURCE CODE STATS: |A_src|={0}, |B_src|={1}, |A_src.lines|={2}, |B_src.lines|={3}, ' \
+              '|common prefix lines|={4}, |common suffix lines|={5}'.format(
+            len(A_src), len(B_src), len(A_src.lines), len(B_src.lines), longest_common_prefix(A_src.lines, B_src.lines),
+            longest_common_suffix(A_src.lines, B_src.lines))
+        print 'BASE CASE TREE STATS: |A|={0}, |B|={1}, A.height={2}, B.height={3}, |shape_fingerprints(A, B)|={4}'.format(
+            len([x for x in A.iter()]), len([x for x in B.iter()]),
+            A.depth, B.depth, len(base_fingerprints))
+        print 'OPTIMISED TREE STATS: |A_opt|={0}, |B_opt|={1}, A_opt.height={2}, B_opt.height={3}, ' \
+            '|shape_fingerprints(A_opt, B_opt)|={4}'.format(
+            len([x for x in A_opt.iter()]), len([x for x in B_opt.iter()]),
+            A_opt.depth, B_opt.depth, len(opt_fingerprints))
+        if unique_node_matches is not None:
+            print '|unique fingerprint matches|={0}, |potential match fgs|={1}, ' \
+                  '|potential matches in A|={2}, |potential matches in B|={3}'.format(
+                        len(unique_node_matches), len(potential_match_fingerprints),
+                        num_potentially_matching_nodes_A, num_potentially_matching_nodes_B)
 
 
     print ''
@@ -307,12 +305,12 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
             d, node_matches = zs_memo.simple_distance(A_opt, B_opt, len(opt_fingerprints), simple_tree.Node.get_children, simple_tree.Node.get_label,
                                         comparison_filter=comparison_permitted_by_label,
                                         unique_match_constraints=unique_node_matches,
-                                        potential_match_fingerprints=potential_match_fingerprints, verbose=True)
+                                        potential_match_fingerprints=potential_match_fingerprints, verbose=not html_render)
         else:
             d, node_matches = compare.simple_distance(A_opt, B_opt, len(opt_fingerprints), simple_tree.Node.get_children, simple_tree.Node.get_label,
                                         comparison_filter=comparison_permitted_by_label,
                                         unique_match_constraints=unique_node_matches,
-                                        potential_match_fingerprints=potential_match_fingerprints, verbose=True)
+                                        potential_match_fingerprints=potential_match_fingerprints, verbose=not html_render)
         t2 = datetime.datetime.now()
         compare.check_match_list(node_matches)
         dt = t2 - t1
@@ -336,7 +334,14 @@ def test(A_src, B_src, type_filtering=False, flatten=False, common_prefix_suffix
 
     assert X == B
 
-    print 'Distance={}, |node matches|={}, |full_matches|={}, |diffs|={}, took min {} max {} avg {}'.format(d, len(node_matches), len(node_matches_full), len(diffs), min_dt, max_dt, sum_dt / repeats)
+    if not html_render:
+        print 'Distance={}, |node matches|={}, |full_matches|={}, |diffs|={}, took min {} max {} avg {}'.format(d, len(node_matches), len(node_matches_full), len(diffs), min_dt, max_dt, sum_dt / repeats)
+
+    if html_render:
+        html = render_diff.render_diffs(A_src, A, B_src, B, diffs)
+        print html
+
+
 
 
 
@@ -380,10 +385,11 @@ if __name__ == '__main__':
     parser.add_argument('--fg_match', action='store_true', help="Enable fingerprint matching")
     parser.add_argument('--fg_compact', action='store_true', help="Enable fingerprint compaction")
     parser.add_argument('--repeats', type=int, default=1, help="number of repetitions")
+    parser.add_argument('--html', action='store_true', help="Generate HTML rendering of diffs")
     args = parser.parse_args()
 
     A_src, B_src = get_data(args.data)
 
     test(A_src, B_src, args.type_filter, args.flatten, args.common_ends, args.memo, args.fg_match,
-         args.fg_compact, args.repeats)
+         args.fg_compact, args.repeats, args.html)
 

@@ -1,4 +1,6 @@
-import _ast, type_pruning
+import _ast
+import type_pruning
+
 
 def _retain(cls):
     if issubclass(cls, (_ast.stmt, _ast.mod)):

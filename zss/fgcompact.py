@@ -36,7 +36,9 @@ def compacted_match_list_to_node_list(match_list):
             # If the fingerprints don't match we cannot match the nodes within
         elif not a_i.compacted and not b_j.compacted:
             # Not compacted; add the original nodes as matches
-            node_matches.append((a_i.original_node, b_j.original_node))
+            a = a_i.original_node if a_i.original_node is not None else a_i
+            b = b_j.original_node if b_j.original_node is not None else b_j
+            node_matches.append((a, b))
 
     return node_matches
 

@@ -5,6 +5,9 @@ class EditOp (object):
     def apply(self, node_by_index):
         raise NotImplementedError('abstact for type {0}'.format(type(self)))
 
+    def build_node_to_op_table(self, node_to_op_table, merge_id_to_node):
+        raise NotImplementedError('abstact for type {0}'.format(type(self)))
+
 
 class RemoveEditOp (EditOp):
     def __init__(self, node_id):
@@ -14,6 +17,11 @@ class RemoveEditOp (EditOp):
         node = merge_id_to_node[self.node_id]
         parent = node.parent
         parent.children.remove(node)
+
+    def build_node_to_op_table(self, node_to_op_table, merge_id_to_node):
+        node = merge_id_to_node.get(self.node_id)
+        if node is not None:
+            node_to_op_table[node] = RemoveEditOp
 
 
 class InsertEditOp (EditOp):
@@ -30,6 +38,11 @@ class InsertEditOp (EditOp):
         parent.insert_child(self.pos, node)
         merge_id_to_node[self.node_id] = node
 
+    def build_node_to_op_table(self, node_to_op_table, merge_id_to_node):
+        node = merge_id_to_node.get(self.node_id)
+        if node is not None:
+            node_to_op_table[node] = InsertEditOp
+
 
 class UpdateEditOp (EditOp):
     def __init__(self, node_id, value):
@@ -39,6 +52,11 @@ class UpdateEditOp (EditOp):
     def apply(self, merge_id_to_node):
         node = merge_id_to_node[self.node_id]
         node.value = self.value
+
+    def build_node_to_op_table(self, node_to_op_table, merge_id_to_node):
+        node = merge_id_to_node.get(self.node_id)
+        if node is not None:
+            node_to_op_table[node] = UpdateEditOp
 
 
 def edit_script(A, B, node_match_pairs):

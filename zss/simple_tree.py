@@ -180,6 +180,8 @@ class Node(object):
 
         # Get start markers for all children
         child_starts = [child.start for child in self.children]
+        if len(child_starts) > 0:
+            child_starts[0] = child_starts[0] or start
 
         # Fill in any blank entries backwards from the end
         valid_marker = end
@@ -196,20 +198,35 @@ class Node(object):
         for child, start, end in zip(self.children, child_starts, child_ends):
             child.fix_markers_top_down(start, end)
 
-        for a, b in zip(self.children[:-1], self.children[1:]):
-            assert b.start >= a.end
-
     def fix_markers_bottom_up(self):
         if len(self.children) > 0:
             child_starts = [child.fix_markers_bottom_up() for child in self.children]
-            if self.start is None:
-                child_starts = [s for s in child_starts if s is not None]
-                if len(child_starts) > 0:
-                    s = min(child_starts)
+            child_starts = [s for s in child_starts if s is not None]
+            if len(child_starts) > 0:
+                s = min(child_starts)
+                if self.start is None:
                     self.start = s
+                else:
+                    self.start = min(self.start, s)
+
+        self.children.sort(key=lambda x: x.start)
 
         return self.start
 
+    def check_markers(self):
+        for a, b in zip(self.children[:-1], self.children[1:]):
+            assert b.start >= a.end
+
+        for c in self.children:
+            assert c.end >= c.start
+
+        for c in self.children:
+            if c.start is not None and self.start is not None:
+                assert c.start >= self.start
+
+        for c in self.children:
+            if c.end is not None and self.end is not None:
+                assert c.end <= self.end
 
     def common_prefix_matches(self, matches, other_node, prefix_end_self, prefix_end_other):
         # If the node fingerprints match and their ranges are contained entirely within the common prefix,
@@ -340,8 +357,20 @@ class Node(object):
             rng = ' (- {0})'.format(self.end.pos)
         else:
             rng = ''
+        valid = set()
+        if self.end < self.start and self.start is not None and self.end is not None:
+            valid.add(' ##**--SELF--**##')
+        for c in self.children:
+            if c.start < self.start and c.start is not None and self.start is not None:
+                valid.add(' ##**--CH_START--**##')
+            if c.end > self.end and c.end is not None and self.end is not None:
+                valid.add(' ##**--CH_END--**##')
+        for c0, c1 in zip(self.children[:-1], self.children[1:]):
+            if c0.end > c1.start and c0.end is not None and c1.start is not None:
+                valid.add(' ##**--CH_ORD--**##')
+        valid = ''.join(sorted(valid))
         if len(self.children) > 0:
             ch = '\n'.join([c.pretty_print(level+1) for c in self.children])
-            return '{0}{1}{2}:\n{3}'.format('  ' * level, self.label, rng, ch)
+            return '{0}{1}{2}{3}:\n{4}'.format('  ' * level, self.label, valid, rng, ch)
         else:
-            return '{0}{1}{2}'.format('  ' * level, self.label, rng)
+            return '{0}{1}{2}{3}'.format('  ' * level, self.label, valid, rng)
