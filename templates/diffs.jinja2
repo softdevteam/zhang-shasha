@@ -1,0 +1,109 @@
+<html>
+	<head>
+		<title>Diff</title>
+		<style>
+			.overall {
+				background: #f8f8f8;
+			}
+
+			.diff {
+				border-radius: 5px;
+				border: 1px solid #e0e0e0;
+				background: #ffffff;
+				width: 100%
+			}
+
+			.left_container {
+				width: 49%;
+				padding: 5px;
+				overflow: scroll;
+			}
+
+			.right_container {
+				width: 49%;
+				left: 50%;
+				position: absolute;
+				padding: 5px;
+				overflow: scroll;
+			}
+
+			.diff_ins {
+				background: rgba(128,255,128,0.5);
+			}
+
+			.diff_del {
+				background: rgba(255,128,128,0.5);
+			}
+
+			.diff_upd {
+				background: rgba(255,255,128,0.5);
+			}
+
+			.diff_match {
+				background: rgba(255,255,255,0.125);
+			}
+
+            .node_children {
+
+            }
+
+			.hidden {
+			    display: none;
+			}
+		</style>
+
+		<script>
+            function showDiffs() {
+                var diffs_elem = document.getElementById("diffs");
+                var tree_elem = document.getElementById("tree");
+                diffs_elem.className = "";
+                tree_elem.className = "hidden";
+            }
+
+            function showTree() {
+                var diffs_elem = document.getElementById("diffs");
+                var tree_elem = document.getElementById("tree");
+                diffs_elem.className = "hidden";
+                tree_elem.className = "";
+            }
+
+            document.onkeypress = function(event) {
+                if (event.keyCode == 97) {
+                    showDiffs();
+                }
+                else if (event.keyCode == 100) {
+                    showTree();
+                }
+            }
+		</script>
+	</head>
+
+	<body>
+        <h3>Diff stats</h3>
+
+	    {{ header }}
+
+	    <p><button id="diffs_btn" onclick="showDiffs()">Show Diffs</button>
+	        <button id="tree_btn" onclick="showTree()">Show Tree</button></p>
+
+	    <div id="diffs">
+
+            <h3>The diffs</h3>
+
+            <div class="overall">
+                <div class="right_container"><div class="diff">{{ diffs_right }}</div></div>
+                <div class="left_container"><div class="diff">{{ diffs_left }}</div></div>
+            </div>
+        </div>
+
+        <div class="hidden" id="tree">
+
+            <h3>The tree</h3>
+
+            <div class="overall">
+                <div class="right_container"><div class="diff">{{ tree_right }}</div></div>
+                <div class="left_container"><div class="diff">{{ tree_left }}</div></div>
+            </div>
+        </div>
+	</body>
+</html>
