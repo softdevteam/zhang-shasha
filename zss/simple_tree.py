@@ -50,6 +50,14 @@ class Node(object):
         self.index_in_keyroot_list = -1
         self.dist_to_keyroot = -1
         self.merge_id = merge_id
+        self.feature_vector = None
+        self.left_sibling_feats = None
+        self.right_sibling_feats = None
+        self.left_tree_feats = None
+        self.right_tree_feats = None
+        self.matched = False
+        self.best_match = None
+        self.best_match_score = -1.0
 
     @staticmethod
     def get_children(node):
@@ -102,6 +110,17 @@ class Node(object):
         while len(queue) > 0:
             n = queue.popleft()
             for c in n.children: queue.append(c)
+            yield n
+
+    def iter_unmatched(self):
+        """Iterate over this node and its children in a preorder traversal."""
+        queue = collections.deque()
+        queue.append(self)
+        while len(queue) > 0:
+            n = queue.popleft()
+            for c in n.children:
+                if not c.matched:
+                    queue.append(c)
             yield n
 
     @property

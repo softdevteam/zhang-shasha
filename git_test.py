@@ -9,11 +9,64 @@ import time
 import pygit2
 
 from ast_to_simple_tree import ASTConverter
-from zss import compare, zs_memo, tree_match, edit_script
+from zss import compare, zs_memo, tree_match, edit_script, fg_match
 from zss.source_text import SourceText, longest_common_prefix, longest_common_suffix
 
 
-def tree_diff(A_src, B_src, verbose=False):
+
+def tree_diff_zs(A_src, A, B_src, B, verbose):
+    if verbose:
+        print 'SOURCE CODE STATS: |A_src|={0}, |B_src|={1}, |A_src.lines|={2}, |B_src.lines|={3}, ' \
+              '|common prefix lines|={4}, |common suffix lines|={5}'.format(
+            len(A_src), len(B_src), len(A_src.lines), len(B_src.lines), longest_common_prefix(A_src.lines, B_src.lines),
+            longest_common_suffix(A_src.lines, B_src.lines))
+
+    d, node_matches, dt = tree_match.tree_match(A, B, verbose=verbose, distance_fn=zs_memo.simple_distance)
+
+    return d, node_matches, dt
+
+
+
+def test_fg_match(A_src, A, B_src, B, verbose):
+    print('SOURCE CODE STATS: |A_src|={0}, |B_src|={1}, |A_src.lines|={2}, |B_src.lines|={3}'.format(
+        len(A_src), len(B_src), len(A_src.lines), len(B_src.lines)))
+
+
+    t1 = time.time()
+
+    fv = fg_match.FeatureVectorTable()
+    fv.add_tree(A)
+    fv.add_tree(B)
+
+    print('BASE CASE TREE STATS: |A|={0}, |B|={1}, A.height={2}, B.height={3}, ' \
+                             '|shape_fingerprints(A, B)|={4}'.format(
+        len([x for x in A.iter()]), len([x for x in B.iter()]),
+        A.depth, B.depth, len(fv.fingerprints)))
+
+    t2 = time.time()
+
+    top_down_matches = fg_match.top_down_match_nodes_by_fingerprint(A, B)
+    n_top_down_matched_nodes = 0
+    for a, b in top_down_matches:
+        n_top_down_matched_nodes += a.subtree_size
+
+    t3 = time.time()
+
+    bottom_up_matches = fg_match.bottom_up_match_nodes_by_fingerprint(A, B)
+
+    t4 = time.time()
+
+    print 'Fingerprint generation: {:.2f}s, top down matching ({}): {:.2f}s, bottom up matches ({}): {:.2f}s'.format(
+        t2-t1, n_top_down_matched_nodes, t3-t2, len(bottom_up_matches), t4-t3)
+
+    node_matches = top_down_matches + bottom_up_matches
+
+
+    return -1, node_matches, t4-t1
+
+
+
+def tree_diff_test(A_src, B_src, verbose=False, use_fg=False):
     conv = ASTConverter()
 
     try:
@@ -28,7 +81,13 @@ def tree_diff(A_src, B_src, verbose=False):
             len(A_src), len(B_src), len(A_src.lines), len(B_src.lines), longest_common_prefix(A_src.lines, B_src.lines),
             longest_common_suffix(A_src.lines, B_src.lines))
 
-    d, node_matches, dt = tree_match.tree_match(A, B, verbose=verbose, distance_fn=zs_memo.simple_distance)
+
+    if use_fg:
+        d, node_matches, dt = test_fg_match(A_src, A, B_src, B, verbose)
+    else:
+        d, node_matches, dt = tree_diff_zs(A_src, A, B_src, B, verbose)
+
+
     compare.check_match_list(node_matches)
 
     diffs = edit_script.edit_script(A, B, node_matches)
@@ -51,6 +110,8 @@ def tree_diff(A_src, B_src, verbose=False):
 
 
 
+
+
 def show_tree(prefix, repo, tree):
     for entry in tree:
         data = repo[entry.id]
@@ -60,7 +121,7 @@ def show_tree(prefix, repo, tree):
 
 
 
-def walk_commit(repo, commit_id):
+def walk_commit(repo, commit_id, use_fg):
     num_diffs = 0
     min_dt = None
     max_dt = None
@@ -78,7 +139,7 @@ def walk_commit(repo, commit_id):
                 if old_file.path.endswith('.py') and new_file.path.endswith('.py'):
                     # print '{}({}) became {}({})'.format(old_file.path, old_file.id, new_file.path, new_file.id)
                     if old_blob is not None and new_blob is not None:
-                        d, dt = tree_diff(SourceText(old_blob.data), SourceText(new_blob.data))
+                        d, dt = tree_diff_test(SourceText(old_blob.data), SourceText(new_blob.data), use_fg=use_fg)
                         if d is not None:
                             min_dt = min(dt, min_dt) if min_dt is not None else dt
                             max_dt = max(dt, max_dt) if max_dt is not None else dt
@@ -98,14 +159,14 @@ def walk_commit(repo, commit_id):
 
 
 
-def walk_master(repo_path):
+def walk_master(repo_path, use_fg):
     repo = pygit2.Repository(repo_path)
     master_branch = repo.lookup_branch('master')
     master_commit = repo[master_branch.resolve().target]
-    walk_commit(repo, master_branch.resolve().target)
+    walk_commit(repo, master_branch.resolve().target, use_fg=use_fg)
 
 
-def compare_file(repo_path, path, commit_id, parent_commit_id, use_diff):
+def compare_file(repo_path, path, commit_id, parent_commit_id, use_diff, use_fg):
     repo = pygit2.Repository(repo_path)
     if commit_id is None:
         commit = repo.revparse_single('HEAD')
@@ -138,7 +199,7 @@ def compare_file(repo_path, path, commit_id, parent_commit_id, use_diff):
             t2 = time.time()
             dt = t2 - t1
         else:
-            d, dt = tree_diff(SourceText(old_blob.data), SourceText(new_blob.data), verbose=True)
+            d, dt = tree_diff_test(SourceText(old_blob.data), SourceText(new_blob.data), verbose=True, use_fg=use_fg)
         print 'Took {0:.3f}s'.format(dt)
 
 if __name__ == '__main__':
@@ -148,9 +209,10 @@ if __name__ == '__main__':
     parser.add_argument('--commit', type=str, default=None, help="Commit ID")
     parser.add_argument('--parent', type=str, default=None, help="Parent commit ID")
     parser.add_argument('--diff', action='store_true', help="Just use diff")
+    parser.add_argument('--use_fg', action='store_true', help="Use fingerprint matching")
     args = parser.parse_args()
 
     if args.file is not None:
-        compare_file(args.repo_path, args.file, args.commit, args.parent, args.diff)
+        compare_file(args.repo_path, args.file, args.commit, args.parent, args.diff, args.use_fg)
     else:
-        walk_master(args.repo_path)
+        walk_master(args.repo_path, args.use_fg)
