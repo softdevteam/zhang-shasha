@@ -1,3 +1,13 @@
+"""
+SHA Hash based fingerprint node matcher
+
+Uses the SHA fingerprint to match subtrees that are equal.
+
+This is an implementation of the top down pass from Gumtree algorithm [1].
+
+[1] "Fine-grained and accurate source code differencing" by
+Jean-Remy Falleri, Floreal Morandat, Xavier Blanc, Matias Martinez and Martin Monperrus
+"""
 import heapq, collections
 
 class DepthNodeQueue (object):

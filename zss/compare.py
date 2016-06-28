@@ -141,6 +141,29 @@ def simple_distance(A, B, N_fingerprints, get_children=Node.get_children,
         the labels are the same. A number N represent it takes N changes to
         transform one label into the other.
 
+    :param comparison_filter:
+        [optional] a dictionary that determines if two nodes can possibly match by their
+        type labels, of the form `{(label_a, label_b): can_match}` where
+        `label_a` is the type label from node A, `label_b` is the type label
+        from node B and `can_match` is a boolean indicating if two nodes
+        with these type labels can be matched
+
+    :param unique_match_constraints:
+        [optional] A list of node pairs of the form `[(node_from_A, node_from_B), ...]`
+        that list nodes that are matched to one another as a result of
+        the subtrees rooted at them being found to be equal by a pre-processing
+        step (see `fg_match` module)
+
+    :param potential_match_fingerprints:
+        [optional] A set of node fingerprint indices that are used by the
+        same number of nodes in both trees. Since they are used more than
+        once in each tree they cannot be trivially matched; e.g. if there are
+        two nodes x0, and x1 in tree A and two nodes y0 and y1 that use
+        fingerprint i, x0 could match to either y0 or y1. We do however know
+        that x0 will match to either y0 or y1, but no other node. This can
+        be used to speed up the matching process by not fully exploring matches
+        that involve nodes whose fingerprints are in this set.
+
     :return: An integer distance [0, inf+)
     """
     def update_cost(a, b):
@@ -196,6 +219,29 @@ def distance(A, B, get_children, update_cost,
 
     :param update_cost:
         A function ``update_cost(a, b) == cost to change a into b >= 0``.
+
+    :param comparison_filter:
+        [optional] a dictionary that determines if two nodes can possibly match by their
+        type labels, of the form `{(label_a, label_b): can_match}` where
+        `label_a` is the type label from node A, `label_b` is the type label
+        from node B and `can_match` is a boolean indicating if two nodes
+        with these type labels can be matched
+
+    :param unique_match_constraints:
+        [optional] A list of node pairs of the form `[(node_from_A, node_from_B), ...]`
+        that list nodes that are matched to one another as a result of
+        the subtrees rooted at them being found to be equal by a pre-processing
+        step (see `fg_match` module)
+
+    :param potential_match_fingerprints:
+        [optional] A set of node fingerprint indices that are used by the
+        same number of nodes in both trees. Since they are used more than
+        once in each tree they cannot be trivially matched; e.g. if there are
+        two nodes x0, and x1 in tree A and two nodes y0 and y1 that use
+        fingerprint i, x0 could match to either y0 or y1. We do however know
+        that x0 will match to either y0 or y1, but no other node. This can
+        be used to speed up the matching process by not fully exploring matches
+        that involve nodes whose fingerprints are in this set.
 
     :return: An integer distance [0, inf+)
     '''
@@ -411,25 +457,4 @@ def distance(A, B, get_children, update_cost,
     node_matches = [(A.nodes[i], B.nodes[j]) for i, j in matches]
 
     return treedists[-1][-1], node_matches
-
-
-def check_match_list(matches):
-    match_set = set(matches)
-    if len(match_set) < len(matches):
-        raise RuntimeError('Duplicate match pairs detected')
-    a_set = set([m[0] for m in matches])
-    b_set = set([m[1] for m in matches])
-    if len(a_set) < len(matches):
-        raise RuntimeError('Node from tree A matched more than once')
-    if len(b_set) < len(matches):
-        raise RuntimeError('Node from tree B matched more than once')
-    #
-    # sorted_matches = sorted(matches)
-    # for i, pair in enumerate(sorted_matches):
-    #     # print pair
-    #     for ab in sorted_matches[:i]:
-    #         if ab == pair:
-    #             print 'Warning: match {0}->{1} appears more than once'.format(pair[0], pair[1])
-    #         if ab[0] == pair[0] and ab[1] != pair[1]:
-    #             print 'Error: match {0}->{1} conflicts with {2}->{3}'.format(pair[0], pair[1], ab[0], ab[1])
 

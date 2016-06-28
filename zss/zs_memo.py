@@ -1,8 +1,24 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-#Authors: Tim Henderson and Steve Johnson
+"""
+#Authors: Tim Henderson, Steve Johnson and Geoff French
 #Email: tim.tadh@gmail.com, steve@steveasleep.com
 #For licensing see the LICENSE file in the top level directory.
+
+This is a modified version of the `compare` module.
+
+The main difference is that this implementation attempts to cache results;
+comparing two nodes results in values being generated for nodes on
+the left-most-path of each tree. Given that the fingerprint index
+acts as an identifier for the content of a subtree, we can
+determine if two subtrees with the same fingerprints have
+been compared before. If so, we can re-apply cached left-most-path
+scores rather than re-computing them from scratch.
+
+Typically results in a 2x speedup, while saving far more actions;
+regrettably the caching machinery adds an overhead that prevents
+the full speed up from being obtained.
+"""
 
 import collections, itertools
 
@@ -141,8 +157,8 @@ def simple_distance(A, B, N_fingerprints, get_children=Node.get_children,
 
     Otherwise, use :py:func:`zss.distance` instead.
 
-    :param A: The root of a tree.
-    :param B: The root of a tree.
+    :param A: The root of tree A.
+    :param B: The root of tree B.
 
     :param get_children:
         A function ``get_children(node) == [node children]``.  Defaults to
@@ -161,6 +177,32 @@ def simple_distance(A, B, N_fingerprints, get_children=Node.get_children,
         default, this is string edit distance (if available). 0 indicates that
         the labels are the same. A number N represent it takes N changes to
         transform one label into the other.
+
+    :param comparison_filter:
+        [optional] a dictionary that determines if two nodes can possibly match by their
+        type labels, of the form `{(label_a, label_b): can_match}` where
+        `label_a` is the type label from node A, `label_b` is the type label
+        from node B and `can_match` is a boolean indicating if two nodes
+        with these type labels can be matched
+
+    :param unique_match_constraints:
+        [optional] A list of node pairs of the form `[(node_from_A, node_from_B), ...]`
+        that list nodes that are matched to one another as a result of
+        the subtrees rooted at them being found to be equal by a pre-processing
+        step (see `fg_match` module)
+
+    :param potential_match_fingerprints:
+        [optional] A set of node fingerprint indices that are used by the
+        same number of nodes in both trees. Since they are used more than
+        once in each tree they cannot be trivially matched; e.g. if there are
+        two nodes x0, and x1 in tree A and two nodes y0 and y1 that use
+        fingerprint i, x0 could match to either y0 or y1. We do however know
+        that x0 will match to either y0 or y1, but no other node. This can
+        be used to speed up the matching process by not fully exploring matches
+        that involve nodes whose fingerprints are in this set.
+
+    :param verbose:
+        if True, debug information is printed to STDOUT
 
     :return: An integer distance [0, inf+)
     """

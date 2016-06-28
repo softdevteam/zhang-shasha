@@ -1,3 +1,13 @@
+"""
+Edit script generator
+
+Defines the `EditOp`, `RemoveEditOp`, `InsertEditOp` and `UpdateEditOp` class to represent
+edit operations that modify a tree.
+
+Defines the `edit_script` function that given two trees and a list of node matches will
+generate a list of edit operations to mutate tree A into tree B.
+
+"""
 import simple_tree
 
 
@@ -60,6 +70,19 @@ class UpdateEditOp (EditOp):
 
 
 def edit_script(A, B, node_match_pairs):
+    """
+    Compute an edit script to mutate tree `A` so that it is equal to tree `B`. It uses the
+    list of node matches supplied as `node_match_pairs` to specify which nodes
+    in tree A and tree B are effectively the 'same' node, modulo some small modifications,
+    e.g. value.
+
+    :param A: tree A, composed of nodes of type `simple_tree.Node`
+    :param B: tree B, composed of nodes of type `simple_tree.Node`
+    :param node_match_pairs: a list of node pairs, where each pair is a tuple of
+    `(node_from_A, node_from_B)` where the respective nodes are from tree A and tree B.
+
+    :return: a list of edit operations
+    """
     diffs = []
 
     matched_a = set()
@@ -69,9 +92,11 @@ def edit_script(A, B, node_match_pairs):
     # Walk the matched node pairs, assign merge IDs and add update operations as necessary
     for k, (a_i, b_j) in enumerate(node_match_pairs):
         a_i.merge_id = b_j.merge_id = merge_id
+        # Insert into the sets matched_a and matched_b
         matched_a.add(a_i)
         matched_b.add(b_j)
 
+        # Add update operations for each match where the values differ
         if a_i.value != b_j.value:
             diffs.append(UpdateEditOp(k, b_j.value))
         merge_id += 1

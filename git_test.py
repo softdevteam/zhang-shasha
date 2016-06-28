@@ -83,8 +83,6 @@ def tree_diff_test(A_src, B_src, verbose=False, use_fg=False):
         d, node_matches, dt = tree_diff_zs(A_src, A, B_src, B, verbose)
 
 
-    compare.check_match_list(node_matches)
-
     diffs = edit_script.edit_script(A, B, node_matches)
 
 
