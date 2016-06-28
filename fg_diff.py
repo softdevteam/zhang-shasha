@@ -22,6 +22,8 @@ def test_fg_match(A_src, B_src):
     fv.add_tree(A)
     fv.add_tree(B)
 
+
+
     print('BASE CASE TREE STATS: |A|={0}, |B|={1}, A.height={2}, B.height={3}, ' \
                              '|shape_fingerprints(A, B)|={4}'.format(
         len([x for x in A.iter()]), len([x for x in B.iter()]),
@@ -36,7 +38,7 @@ def test_fg_match(A_src, B_src):
 
     t3 = time.time()
 
-    bottom_up_matches = fg_match.bottom_up_match_nodes_by_fingerprint(A, B)
+    bottom_up_matches = fg_match.greedy_bottom_up_match_nodes_by_fingerprint(A, B)
 
     t4 = time.time()
 

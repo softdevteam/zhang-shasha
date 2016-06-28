@@ -152,6 +152,16 @@ def spec_to_type_set(spec):
         raise TypeError('A type spec should be either a dictionary or a type, not {0}'.format(spec))
 
 
+def _make_ast_class_name_to_id_map():
+    classes = ast_type_to_spec.keys()
+    cls_names = [cls.__name__ for cls in classes]
+    cls_names.sort()
+    return {name: i for i, name in enumerate(cls_names)}
+
+ast_class_name_to_id_map = _make_ast_class_name_to_id_map()
+
+
+
 import unittest
 
 class Test_ast_structure (unittest.TestCase):

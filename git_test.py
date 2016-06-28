@@ -1,14 +1,9 @@
-import argparse
-import os
-import parser
-import subprocess
-import sys
-import tempfile
-import time
+import argparse, os, parser, subprocess, sys, tempfile, time, json
 
 import pygit2
 
 from ast_to_simple_tree import ASTConverter
+import python_ast_structure
 from zss import compare, zs_memo, tree_match, edit_script, fg_match
 from zss.source_text import SourceText, longest_common_prefix, longest_common_suffix
 
@@ -52,7 +47,7 @@ def test_fg_match(A_src, A, B_src, B, verbose):
 
     t3 = time.time()
 
-    bottom_up_matches = fg_match.bottom_up_match_nodes_by_fingerprint(A, B)
+    bottom_up_matches = fg_match.greedy_bottom_up_match_nodes_by_fingerprint(A, B)
 
     t4 = time.time()
 
@@ -202,17 +197,44 @@ def compare_file(repo_path, path, commit_id, parent_commit_id, use_diff, use_fg)
             d, dt = tree_diff_test(SourceText(old_blob.data), SourceText(new_blob.data), verbose=True, use_fg=use_fg)
         print 'Took {0:.3f}s'.format(dt)
 
+
+def export_file(repo_path, path, commit_id, out_path):
+    repo = pygit2.Repository(repo_path)
+    if commit_id is None:
+        commit = repo.revparse_single('HEAD')
+    else:
+        commit = repo.get(commit_id)
+
+    if commit is not None:
+        repo_file = commit.tree[path]
+        repo_blob = repo.get(repo_file.id)
+        src = SourceText(repo_blob.data)
+        conv = ASTConverter()
+        tree = conv.parse(src)
+        js = tree.as_json_tree(python_ast_structure.ast_class_name_to_id_map)
+        js_text = json.dumps(js, indent=2, sort_keys=True)
+        if out_path is None:
+            sys.stdout.write(js_text)
+            sys.stdout.flush()
+        else:
+            open(out_path, 'w').write(js_text)
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('command', type=str, help="Command: [treediff/filediff/export]")
     parser.add_argument('repo_path', type=str, help="Git repository path")
     parser.add_argument('--file', type=str, default=None, help="File path")
     parser.add_argument('--commit', type=str, default=None, help="Commit ID")
     parser.add_argument('--parent', type=str, default=None, help="Parent commit ID")
     parser.add_argument('--diff', action='store_true', help="Just use diff")
     parser.add_argument('--use_fg', action='store_true', help="Use fingerprint matching")
+    parser.add_argument('--out', type=str, default=None, help="Output path, None for STDOUT")
     args = parser.parse_args()
 
-    if args.file is not None:
-        compare_file(args.repo_path, args.file, args.commit, args.parent, args.diff, args.use_fg)
-    else:
+    if args.command == 'treediff':
         walk_master(args.repo_path, args.use_fg)
+    elif args.command == 'filediff':
+        compare_file(args.repo_path, args.file, args.commit, args.parent, args.diff, args.use_fg)
+    elif args.command == 'export':
+        export_file(args.repo_path, args.file, args.commit, args.out)

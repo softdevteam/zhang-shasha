@@ -305,7 +305,7 @@ def score_match_upper_bound(a, b):
            a.feature_vector.jaccard_similarity_upper_bound(b.feature_vector) * 100
 
 def score_match_upper_bound_approx(node, subtree_size):
-    return 2 + 20 + jaccard_similarity_size(a.feature_vector.sum, subtree_size) * 100
+    return 2 + 20 + jaccard_similarity_size(node.feature_vector.sum, subtree_size) * 100
 
 
 def top_down_match_nodes_by_fingerprint(A, B, min_depth=0):
@@ -347,10 +347,6 @@ def top_down_match_nodes_by_fingerprint(A, B, min_depth=0):
                 potential_matches = []
                 for a in a_nodes:
                     for b in b_nodes:
-                        score = a.left_tree_feats.jaccard_similarity(b.left_tree_feats)
-                        score += a.right_tree_feats.jaccard_similarity(b.right_tree_feats)
-                        score += a.left_sibling_feats.jaccard_similarity(b.left_sibling_feats) * 10
-                        score += a.right_sibling_feats.jaccard_similarity(b.right_sibling_feats) * 10
                         potential_matches.append((a, b))
                 potential_matches.sort(key=lambda pair: score_match_context(pair[0], pair[1]))
                 for a, b in potential_matches:
@@ -381,13 +377,15 @@ def apply_bottom_up_match(a, b):
         b.best_match = a
         a.best_match_score = b.best_match_score = score
 
-def bottom_up_match_nodes_by_fingerprint(A, B):
-    matches = []
+
+def bottom_up_match_nodes_by_fingerprint(A, B, matches=None):
+    if matches is None:
+        matches = []
 
     a_nodes = [a for a in A.iter_unmatched() if not a.matched]
     b_nodes = [b for b in B.iter_unmatched() if not b.matched]
 
-    print 'BOTTOM UP {} <-> {}'.format(len(a_nodes), len(b_nodes))
+    # print 'BOTTOM UP {} <-> {}'.format(len(a_nodes), len(b_nodes))
 
     scored_matches = []
     for a in a_nodes:
@@ -401,6 +399,35 @@ def bottom_up_match_nodes_by_fingerprint(A, B):
         if not a.matched and not b.matched:
             matches.append((a, b))
             a.matched = b.matched = True
+
+    return matches
+
+def get_candidate_node(a_node, B):
+    b_nodes = B.post_order_unmatched()
+
+    best_score = -1.0
+    best_node = None
+    for b in b_nodes:
+        if not b.matched and not b.is_leaf():
+            score = score_match(a_node, b)
+            if score > best_score:
+                best_score = score
+                best_node = b
+    return best_node, best_score
+
+
+def greedy_bottom_up_match_nodes_by_fingerprint(A, B, score_thresh=0.3):
+    matches = []
+
+    a_nodes = A.post_order_unmatched()
+
+    # print 'BOTTOM UP {} <-> {}'.format(len(a_nodes), len(b_nodes))
+
+    for a in a_nodes:
+        if not a.matched and not a.is_leaf():
+            c, score = get_candidate_node(a, B)
+            if score >= score_thresh:
+                bottom_up_match_nodes_by_fingerprint(a, c, matches)
 
     return matches
 

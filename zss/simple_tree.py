@@ -123,6 +123,29 @@ class Node(object):
                     queue.append(c)
             yield n
 
+    def __post_order_unmatched(self, nodes):
+        if not self.matched:
+            for child in self.children:
+                child.__post_order_unmatched(nodes)
+            nodes.append(self)
+
+    def post_order_unmatched(self):
+        nodes = []
+        self.__post_order_unmatched(nodes)
+        return nodes
+
+    def is_descendant_of(self, node):
+        x = self
+        while x is not None:
+            if x is node:
+                return True
+            x = x.parent
+        return False
+
+    def is_leaf(self):
+        return len(self.children) == 0
+
+
     @property
     def sha(self):
         if self.__sha is None:
@@ -393,3 +416,28 @@ class Node(object):
             return '{0}{1}{2}{3}:\n{4}'.format('  ' * level, self.label, valid, rng, ch)
         else:
             return '{0}{1}{2}{3}'.format('  ' * level, self.label, valid, rng)
+
+
+    def as_json(self, label_id_map):
+        """
+        Create a Gumtree compatible JSON representation of the subtree rooted at `self`.
+
+        :return: JSON data
+        """
+        label_id = label_id_map.setdefault(self.label, len(label_id_map))
+        pos = self.start.pos if self.start is not None else 0
+        length = self.end.pos - pos if self.end is not None else 0
+        return {
+            'label': self.value,
+            'type': label_id,
+            'type_label': self.label,
+            'pos': pos,
+            'length': length,
+            'children': [child.as_json(label_id_map) for child in self.children],
+        }
+
+
+    def as_json_tree(self, label_id_map):
+        return {
+            'root': self.as_json(label_id_map)
+        }
